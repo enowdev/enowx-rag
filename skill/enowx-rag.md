@@ -17,22 +17,33 @@ Walk the user through installing the `enowx-rag` MCP server and optionally deplo
 - Do not expose secrets or API keys in plain text in the final output; store them in `.env` files.
 - If deploying to Coolify, prefer managed Docker services or the existing `robloxkit-rag` stack if healthy.
 - Do not modify the user's existing code repositories unless explicitly asked.
-- Keep the MCP server config snippet copy-pasteable for Claude Desktop, Cline, or Cursor.
+- Keep the MCP server config snippet copy-pasteable for Codebuddy Desktop, Cline, or Cursor.
 
 ## Setup flow
 
 1. **Detect context**
-   - Check if the user already has a clone of `enowx-rag` or a similar project.
-   - Ask whether they want to connect to an **existing** RAG backend or set up a **local** RAG backend.
-   - If existing: ask for vector store type (`qdrant`, `chroma`, `pgvector`), embedding service (`tei`), URLs, and API keys.
-   - If local: generate a `docker-compose.yml` for Qdrant + TEI.
+   - Check if the user already has a clone of `enowx-rag`.
+   - **Ask first:** "Do you already have Qdrant and TEI installed and running?"
+     - If **yes**: ask for the Qdrant gRPC address and TEI URL, then continue to build MCP server.
+     - If **no**: ask whether the user wants to install locally with Docker, and offer an embedding model suited to their hardware.
+   - **Choose embedding model** (if installing locally):
+     - Default: `BAAI/bge-small-en-v1.5` (384-dim, ~133 MB, good balance)
+     - Low-resource / older CPU: `sentence-transformers/all-MiniLM-L6-v2` (384-dim, smaller, faster)
+     - Better quality / more RAM: `BAAI/bge-base-en-v1.5` (768-dim, larger and slower)
+   - If existing backend: ask for vector store type (`qdrant`, `chroma`, `pgvector`), URLs, and any API keys.
+   - If local backend: generate or update `docker-compose.yml` for Qdrant + TEI with the chosen model.
 
-2. **Build / configure the MCP server**
+2. **Install / start the backend (when needed)**
+   - Verify Docker/Colima is available.
+   - Run `docker compose up -d qdrant tei-embedding`.
+   - Wait for health checks (`curl -f http://localhost:6333/healthz` and `curl -f http://localhost:8081/health`).
+
+3. **Build / configure the MCP server**
    - Build the Go binary with `go build ./cmd/mcp-server`.
    - Create `.env` from the chosen configuration.
-   - Provide the MCP client config snippet (Claude Desktop, Cline, Cursor).
+   - Provide the MCP client config snippet for all supported tools.
 
-3. **Optional Coolify deployment**
+4. **Optional Coolify deployment**
    - If the user wants to deploy to Coolify, use the `coolify` MCP tools to create/update the service/app.
    - Use the existing `robloxkit-rag` service (Qdrant + TEI) if it is healthy and matches the requirements.
 
@@ -41,23 +52,92 @@ Walk the user through installing the `enowx-rag` MCP server and optionally deplo
 Ask these questions one at a time or in a compact batch:
 
 1. `project_path` - Where should the `enowx-rag` repository be created/cloned? (default: `/Users/enowdev/Project/enowx-rag`)
-2. `mode` - `existing` or `local`?
-3. If `existing`:
+2. `backend_ready` - Do you already have Qdrant + TEI installed and running? (`yes`/`no`)
+3. If `yes`:
    - `vector_store` (`qdrant`/`chroma`/`pgvector`)
    - `qdrant_addr` (host:port, e.g. `localhost:6334`)
    - `tei_url` (e.g. `http://localhost:8081`)
    - `pgvector_dsn` (if vector_store is `pgvector`)
-4. If `local`:
-   - preferred port for Qdrant (default `6333` REST / `6334` gRPC)
-   - preferred port for TEI (default `8081`)
-   - Hugging Face token if using a gated model (optional)
+4. If `no`:
+   - `embedding_model` — choose from:
+     - `BAAI/bge-small-en-v1.5` (default, 384-dim, ~133 MB)
+     - `sentence-transformers/all-MiniLM-L6-v2` (lightweight, 384-dim, faster on low-end CPUs)
+     - `BAAI/bge-base-en-v1.5` (better quality, 768-dim, needs more RAM)
+   - `tei_port` (default `8081`)
+   - `qdrant_rest_port` (default `6333`)
+   - `qdrant_grpc_port` (default `6334`)
+   - `hf_token` (optional, only if the chosen model is gated)
+5. `tools_to_install` — Which coding tools should use this MCP server? (Codebuddy, Cline, Cursor, OpenCode, Codex, Factory Droid, Roo, Zed, Windsurf, Continue). Provide configs for all of them anyway, but prioritize the ones the user selects.
+6. `target_project` — Path to the project that should receive `AGENTS.md` + `CLAUDE.md` (optional).
 
 ## Output artifacts
 
 - `enowx-rag/.env`
-- `enowx-rag/mcp-server/docker-compose.yml` (only for local mode)
+- `enowx-rag/mcp-server/docker-compose.yml` (only for local mode, with chosen model)
 - MCP client config snippet (JSON)
 - Verification commands (curl / docker ps / go test)
+- `AGENTS.md` and `CLAUDE.md` in the target project (if requested)
+
+## Example `.env` (existing backend)
+
+```bash
+RAG_VECTOR_STORE=qdrant
+RAG_EMBEDDER=tei
+RAG_QDRANT_ADDR=localhost:6334
+RAG_TEI_URL=http://localhost:8081
+```
+
+## Example `.env` (local backend)
+
+```bash
+RAG_VECTOR_STORE=qdrant
+RAG_EMBEDDER=tei
+RAG_QDRANT_ADDR=localhost:6334
+RAG_TEI_URL=http://localhost:8081
+RAG_MODEL_ID=BAAI/bge-small-en-v1.5
+```
+
+## Example docker-compose.yml (local, with chosen model)
+
+```yaml
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: enowx-rag-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  tei-embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.7
+    container_name: enowx-rag-tei
+    ports:
+      - "8081:80"
+    environment:
+      - MODEL_ID=${RAG_MODEL_ID:-BAAI/bge-small-en-v1.5}
+      - RUST_LOG=info
+      - MAX_BATCH_TOKENS=16384
+    volumes:
+      - tei-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  qdrant-data:
+  tei-data:
+```
 
 ## Example MCP client config
 
@@ -102,7 +182,7 @@ The same server block can be reused; only the file location differs. Use the abs
 
 #### macOS / Linux paths
 
-- **Claude Code (anthropic CLI):** `~/.claude/CLAUDE.md` and `~/.claude/config.json` for MCP. MCP config is usually in `~/.claude/config.json` under `mcpServers`.
+- **Codebuddy Code (anthropic CLI):** `~/.claude/CLAUDE.md` and `~/.claude/config.json` for MCP. MCP config is usually in `~/.claude/config.json` under `mcpServers`.
 - **Cline:** `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json`
 - **Codebuddy Desktop:** `~/Library/Application Support/Codebuddy/settings.json`
 - **Codebuddy Code (VS Code):** same as Codebuddy Desktop settings, or workspace `.vscode/mcp.json` if supported.
@@ -114,7 +194,7 @@ The same server block can be reused; only the file location differs. Use the abs
 - **Zed:** `~/.config/zed/settings.json` under `mcp_servers` or `assistant.mcp.servers` (check latest Zed docs; format is similar).
 - **Windsurf:** `~/.windsurf/mcp_config.json` or `~/.codeium/windsurf/mcp_config.json`.
 - **Continue:** `~/.continue/config.json` under `models` or `mcpServers` (format may vary; prefer `mcpServers` if present).
-- **Generic / Claude Desktop:** `claude_desktop_config.json` located at `~/Library/Application Support/Claude/claude_desktop_config.json`.
+- **Generic / Codebuddy Desktop:** `claude_desktop_config.json` located at `~/Library/Application Support/Codebuddy/claude_desktop_config.json`.
 
 ### Universal MCP server block
 
@@ -132,9 +212,9 @@ The same server block can be reused; only the file location differs. Use the abs
 
 ### Full per-tool examples
 
-#### Claude Code / Claude Desktop
+#### Codebuddy Code / Codebuddy Desktop
 
-File: `~/Library/Application Support/Claude/claude_desktop_config.json`
+File: `~/Library/Application Support/Codebuddy/claude_desktop_config.json`
 
 ```json
 {
@@ -152,7 +232,7 @@ File: `~/Library/Application Support/Claude/claude_desktop_config.json`
 }
 ```
 
-Claude Code also reads `CLAUDE.md` from the project root. Make sure to generate/update that file in the user's project.
+Codebuddy Code also reads `CLAUDE.md` from the project root. Make sure to generate/update that file in the user's project.
 
 #### Cline
 
@@ -355,7 +435,7 @@ File: `~/.continue/config.json` (use `mcpServers` if available)
 When setting up a project for RAG memory, generate or update two files in the project root:
 
 1. `AGENTS.md` — universal agent instructions.
-2. `CLAUDE.md` — Claude-family specific instructions (Claude Code, Cline, Codebuddy, etc.).
+2. `CLAUDE.md` — Codebuddy-family specific instructions (Codebuddy Code, Cline, Codebuddy, etc.).
 
 These files remind every AI coding assistant to consult project memory before and after work.
 
@@ -409,7 +489,7 @@ Use project ID: `PROJECT_ID`
 ### CLAUDE.md template
 
 ```markdown
-# Claude instructions for this project
+# Codebuddy instructions for this project
 
 You are working with a project that has an `enowx-rag` MCP server installed.
 
@@ -450,7 +530,7 @@ After running the skill, produce a summary like this:
 - TEI: http://localhost:8081
 
 ### MCP client config
-- Claude Desktop: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Codebuddy Desktop: `~/Library/Application Support/Codebuddy/claude_desktop_config.json`
 - Cline: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json`
 - Codebuddy Desktop: `~/Library/Application Support/Codebuddy/settings.json`
 - Cursor: `~/.cursor/mcp.json`
@@ -483,7 +563,7 @@ curl -f http://localhost:8081/health
 cd /Users/enowdev/Project/enowx-rag/mcp-server && go build ./cmd/mcp-server
 
 # Test MCP server is callable (optional, requires an MCP client)
-# Use Claude Code, Cline, or Factory Droid tool panel to call `rag_create_project`.
+# Use Codebuddy Code, Cline, or Factory Droid tool panel to call `rag_create_project`.
 ```
 
 ## Notes
@@ -492,4 +572,3 @@ cd /Users/enowdev/Project/enowx-rag/mcp-server && go build ./cmd/mcp-server
 - Each project gets its own collection/index: `project_<project_id>`.
 - The `robloxkit-rag` Coolify service already exposes Qdrant on `localhost:6333` and TEI on `localhost:8081` if Colima/Docker is running.
 - `AGENTS.md` and `CLAUDE.md` are opt-in: generate them only when the user says yes or asks to enable "always use RAG memory for this project".
-
