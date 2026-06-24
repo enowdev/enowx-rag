@@ -43,38 +43,29 @@ If connecting to an existing backend, skip this step and set the correct URLs in
 
 ## 4. Install the MCP server in coding tools
 
-Use the same MCP server block in every tool. Only the file location changes.
+Each tool has a different config format and file location. See [README.md](https://github.com/enowdev/enowx-rag/blob/main/README.md) for the exact config block per tool.
 
-```json
-{
-  "mcpServers": {
-    "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
-      "env": {
-        "RAG_VECTOR_STORE": "qdrant",
-        "RAG_EMBEDDER": "tei",
-        "RAG_QDRANT_ADDR": "localhost:6334",
-        "RAG_TEI_URL": "http://localhost:8081"
-      }
-    }
-  }
-}
-```
+### Quick reference
 
-### Tool-specific config locations
+| Tool | Format | Key | Config file |
+| --- | --- | --- | --- |
+| Claude Code | JSON | `mcpServers` | `~/.claude.json` or `.mcp.json` |
+| Claude Desktop | JSON | `mcpServers` | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Cline | JSON | `mcpServers` | `~/.cline/mcp.json` or IDE settings |
+| Cursor | JSON | `mcpServers` | `~/.cursor/mcp.json` or `.cursor/mcp.json` |
+| OpenCode | JSON | `mcp` | `~/.opencode/settings.json` or `opencode.json` |
+| Codex (OpenAI) | TOML | `[mcp_servers.*]` | `~/.codex/config.toml` |
+| Factory Droid | CLI | — | `droid mcp add enowx-rag /path/to/mcp-server` |
+| Roo Code | JSON | `mcpServers` | global `mcp_settings.json` or `.roo/mcp.json` |
+| Zed | JSON | `context_servers` | `~/.config/zed/settings.json` |
+| Windsurf | JSON | `mcpServers` | `~/.codeium/windsurf/mcp_config.json` |
+| Continue | YAML | `mcpServers` (list) | `~/.continue/config.yaml` |
 
-| Tool | Config file |
-| --- | --- |
-| Claude Code / Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` or `~/.claude/config.json` |
-| Cline | `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json` |
-| Cursor | `~/.cursor/mcp.json` |
-| OpenCode | `~/.opencode/settings.json` |
-| Codex (OpenAI) | `~/.codex/config.json` |
-| Factory Droid | `droid mcp add enowx-rag /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server` |
-| Roo Code | `~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo/settings.json` |
-| Zed | `~/.config/zed/settings.json` under `mcp_servers` |
-| Windsurf | `~/.windsurf/mcp_config.json` or `~/.codeium/windsurf/mcp_config.json` |
-| Continue | `~/.continue/config.json` under `mcpServers` |
+**Important differences from the standard JSON format:**
+- **OpenCode**: uses `mcp` key (not `mcpServers`), `command` as array, `environment` (not `env`)
+- **Codex**: uses TOML format with `[mcp_servers.<name>]` tables
+- **Zed**: uses `context_servers` key (not `mcpServers`)
+- **Continue**: uses YAML with `mcpServers` as a list of objects (not a map)
 
 Replace environment values if using Chroma or pgvector instead of Qdrant.
 

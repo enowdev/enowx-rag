@@ -62,16 +62,43 @@ If using an existing backend, skip this step and set the correct URLs in the too
 
 ## 4. Install the MCP server in every coding tool
 
-Use this universal MCP server block. Only the config file location changes.
+Each tool has a different config format and file location. Use the correct one per tool.
 
+### Quick reference table
+
+| Tool | Format | Key | Config file |
+| --- | --- | --- | --- |
+| Claude Code | JSON | `mcpServers` | `~/.claude.json` or `.mcp.json` in project root |
+| Claude Desktop | JSON | `mcpServers` | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Cline | JSON | `mcpServers` | `~/.cline/mcp.json` or IDE MCP settings |
+| Cursor | JSON | `mcpServers` | `~/.cursor/mcp.json` or `.cursor/mcp.json` in project root |
+| OpenCode | JSON | `mcp` | `~/.opencode/settings.json` or `opencode.json` in project root |
+| Codex (OpenAI) | TOML | `[mcp_servers.*]` | `~/.codex/config.toml` |
+| Factory Droid | CLI | — | `droid mcp add enowx-rag /path/to/mcp-server` |
+| Roo Code | JSON | `mcpServers` | global `mcp_settings.json` or `.roo/mcp.json` in project root |
+| Zed | JSON | `context_servers` | `~/.config/zed/settings.json` |
+| Windsurf | JSON | `mcpServers` | `~/.codeium/windsurf/mcp_config.json` |
+| Continue | YAML | `mcpServers` (list) | `~/.continue/config.yaml` |
+
+### Claude Code
+
+**CLI:**
+```bash
+claude mcp add --transport stdio enowx-rag \
+  --env RAG_VECTOR_STORE=qdrant \
+  --env RAG_QDRANT_ADDR=localhost:6334 \
+  --env RAG_TEI_URL=http://localhost:8081 \
+  -- /path/to/enowx-rag/mcp-server/mcp-server
+```
+
+**JSON (`~/.claude.json` or `.mcp.json`):**
 ```json
 {
   "mcpServers": {
     "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_EMBEDDER": "tei",
         "RAG_QDRANT_ADDR": "localhost:6334",
         "RAG_TEI_URL": "http://localhost:8081"
       }
@@ -80,22 +107,201 @@ Use this universal MCP server block. Only the config file location changes.
 }
 ```
 
-### Tool-specific config locations
+### Claude Desktop
 
-| Tool | Config file |
-| --- | --- |
-| Claude Code / Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` or `~/.claude/config.json` |
-| Cline | `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json` |
-| Cursor | `~/.cursor/mcp.json` |
-| OpenCode | `~/.opencode/settings.json` or `.opencode/mcp.json` |
-| Codex (OpenAI) | `~/.codex/config.json` |
-| Factory Droid | `droid mcp add enowx-rag /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server` |
-| Roo Code | `~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo/settings.json` |
-| Zed | `~/.config/zed/settings.json` under `mcp_servers` |
-| Windsurf | `~/.windsurf/mcp_config.json` or `~/.codeium/windsurf/mcp_config.json` |
-| Continue | `~/.continue/config.json` under `mcpServers` |
+**File:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 
-Replace environment values if using Chroma or pgvector instead of Qdrant.
+```json
+{
+  "mcpServers": {
+    "enowx-rag": {
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
+      "env": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_TEI_URL": "http://localhost:8081"
+      }
+    }
+  }
+}
+```
+
+### Cline
+
+**File:** `~/.cline/mcp.json` (CLI) or open Cline panel > MCP Servers > Configure (IDE)
+
+```json
+{
+  "mcpServers": {
+    "enowx-rag": {
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
+      "env": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_TEI_URL": "http://localhost:8081"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+### Cursor
+
+**File:** `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project)
+
+```json
+{
+  "mcpServers": {
+    "enowx-rag": {
+      "type": "stdio",
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
+      "env": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_TEI_URL": "http://localhost:8081"
+      }
+    }
+  }
+}
+```
+
+### OpenCode
+
+**File:** `~/.opencode/settings.json` or `opencode.json` in project root
+
+OpenCode uses `mcp` key (not `mcpServers`), `command` as array, and `environment` (not `env`).
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "enowx-rag": {
+      "type": "local",
+      "command": ["/path/to/enowx-rag/mcp-server/mcp-server"],
+      "enabled": true,
+      "environment": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_TEI_URL": "http://localhost:8081"
+      }
+    }
+  }
+}
+```
+
+### Codex (OpenAI)
+
+**File:** `~/.codex/config.toml` (TOML, not JSON)
+
+**CLI:**
+```bash
+codex mcp add enowx-rag \
+  --env RAG_VECTOR_STORE=qdrant \
+  --env RAG_QDRANT_ADDR=localhost:6334 \
+  --env RAG_TEI_URL=http://localhost:8081 \
+  -- /path/to/enowx-rag/mcp-server/mcp-server
+```
+
+**TOML:**
+```toml
+[mcp_servers.enowx-rag]
+command = "/path/to/enowx-rag/mcp-server/mcp-server"
+
+[mcp_servers.enowx-rag.env]
+RAG_VECTOR_STORE = "qdrant"
+RAG_QDRANT_ADDR = "localhost:6334"
+RAG_TEI_URL = "http://localhost:8081"
+```
+
+### Factory Droid
+
+```bash
+droid mcp add enowx-rag /path/to/enowx-rag/mcp-server/mcp-server
+```
+
+### Roo Code
+
+**File:** global `mcp_settings.json` (via Roo Code > MCP > Edit Global MCP) or `.roo/mcp.json` (project)
+
+```json
+{
+  "mcpServers": {
+    "enowx-rag": {
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
+      "env": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_TEI_URL": "http://localhost:8081"
+      },
+      "alwaysAllow": [],
+      "disabled": false
+    }
+  }
+}
+```
+
+### Zed
+
+**File:** `~/.config/zed/settings.json`
+
+Zed uses `context_servers` key (not `mcpServers`). Can also be added via UI: Command Palette > `agent: add context server`.
+
+```json
+{
+  "context_servers": {
+    "enowx-rag": {
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
+      "args": [],
+      "env": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_TEI_URL": "http://localhost:8081"
+      }
+    }
+  }
+}
+```
+
+### Windsurf
+
+**File:** `~/.codeium/windsurf/mcp_config.json`
+
+Can also be added via MCP Marketplace UI in Windsurf.
+
+```json
+{
+  "mcpServers": {
+    "enowx-rag": {
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
+      "env": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_TEI_URL": "http://localhost:8081"
+      }
+    }
+  }
+}
+```
+
+### Continue
+
+**File:** `~/.continue/config.yaml` (YAML, not JSON)
+
+Continue uses `mcpServers` as a list of objects with `name`, `command`, `env`.
+
+```yaml
+mcpServers:
+  - name: enowx-rag
+    command: /path/to/enowx-rag/mcp-server/mcp-server
+    env:
+      RAG_VECTOR_STORE: qdrant
+      RAG_QDRANT_ADDR: localhost:6334
+      RAG_TEI_URL: http://localhost:8081
+```
+
+Replace `/path/to/enowx-rag/mcp-server/mcp-server` with the actual absolute path to the built binary. Replace environment values if using Chroma or pgvector instead of Qdrant.
 
 ---
 

@@ -17,7 +17,7 @@ Walk the user through installing the `enowx-rag` MCP server and optionally deplo
 - Do not expose secrets or API keys in plain text in the final output; store them in `.env` files.
 - If deploying to Coolify, prefer managed Docker services or the existing `robloxkit-rag` stack if healthy.
 - Do not modify the user's existing code repositories unless explicitly asked.
-- Keep the MCP server config snippet copy-pasteable for Claude Desktop, Cline, or Cursor.
+- Use the exact config format documented by each tool. Do not guess formats.
 
 ## Setup flow
 
@@ -41,7 +41,7 @@ Walk the user through installing the `enowx-rag` MCP server and optionally deplo
 3. **Build / configure the MCP server**
    - Build the Go binary with `go build ./cmd/mcp-server`.
    - Create `.env` from the chosen configuration.
-   - Provide the MCP client config snippet for all supported tools.
+   - Provide the MCP client config snippet for all supported tools using the correct format per tool.
 
 4. **Optional Coolify deployment**
    - If the user wants to deploy to Coolify, use the `coolify` MCP tools to create/update the service/app.
@@ -67,15 +67,15 @@ Ask these questions one at a time or in a compact batch:
    - `qdrant_rest_port` (default `6333`)
    - `qdrant_grpc_port` (default `6334`)
    - `hf_token` (optional, only if the chosen model is gated)
-5. `tools_to_install` — Which coding tools should use this MCP server? (Claude, Cline, Cursor, OpenCode, Codex, Factory Droid, Roo, Zed, Windsurf, Continue). Provide configs for all of them anyway, but prioritize the ones the user selects.
+5. `tools_to_install` — Which coding tools should use this MCP server?
 6. `target_project` — Path to the project that should receive `AGENTS.md` + `CLAUDE.md` (optional).
 
 ## Output artifacts
 
 - `enowx-rag/.env`
 - `enowx-rag/mcp-server/docker-compose.yml` (only for local mode, with chosen model)
-- MCP client config snippet (JSON)
-- Verification commands (curl / docker ps / go test)
+- MCP client config snippet (correct format per tool)
+- Verification commands
 - `AGENTS.md` and `CLAUDE.md` in the target project (if requested)
 
 ## Example `.env` (existing backend)
@@ -139,83 +139,26 @@ volumes:
   tei-data:
 ```
 
-## Example MCP client config
+---
 
-```json
-{
-  "mcpServers": {
-    "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
-      "env": {
-        "RAG_VECTOR_STORE": "qdrant",
-        "RAG_EMBEDDER": "tei",
-        "RAG_QDRANT_ADDR": "localhost:6334",
-        "RAG_TEI_URL": "http://localhost:8081"
-      }
-    }
-  }
-}
-```
+## MCP client config per tool (from official docs)
 
-For Cline, place the same JSON under `mcpServers` in `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json`.
+Each tool has a different config format and file location. Use these exact formats.
 
-## Verification checklist
+### Claude Code (Anthropic CLI)
 
-After setup, verify with these commands:
+**Config file:** `~/.claude.json` (user scope) or `.mcp.json` in project root (project scope)
 
+**CLI command:**
 ```bash
-# Qdrant health
-curl -f http://localhost:6333/healthz
-
-# TEI health
-curl -f http://localhost:8081/health
-
-# Build MCP server
-cd /Users/enowdev/Project/enowx-rag/mcp-server && go build ./cmd/mcp-server
+claude mcp add --transport stdio enowx-rag \
+  --env RAG_VECTOR_STORE=qdrant \
+  --env RAG_QDRANT_ADDR=localhost:6334 \
+  --env RAG_TEI_URL=http://localhost:8081 \
+  -- /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
 ```
 
-When the user wants to install this skill for ALL their coding tools, generate configs for each supported tool and provide copy-paste paths. Ask which tools they actually use, but still provide examples for all of them so the instructions are future-proof.
-
-### Supported MCP client configs
-
-The same server block can be reused; only the file location differs. Use the absolute path to the built binary.
-
-#### macOS / Linux paths
-
-- **Claude Code (anthropic CLI):** `~/.claude/CLAUDE.md` and `~/.claude/config.json` for MCP. MCP config is usually in `~/.claude/config.json` under `mcpServers`.
-- **Cline:** `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json`
-- **Claude Desktop:** `~/Library/Application Support/Claude/settings.json`
-- **Claude Code (VS Code):** same as Claude Desktop settings, or workspace `.vscode/mcp.json` if supported.
-- **OpenCode:** `~/.opencode/settings.json` (or workspace `.opencode/mcp.json` if supported).
-- **Codex (OpenAI):** `~/.codex/config.json` or `~/.codex/settings.json` depending on version; look for `mcpServers`.
-- **Factory Droid:** place the same JSON under the Droid settings for MCP, or guide the user to run `droid mcp add <command>`. Factory Droid usually supports the same `mcpServers` format in its CLI config.
-- **Cursor:** `~/.cursor/mcp.json`
-- **Roo Code:** `~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo/settings.json` or Roo's own MCP panel export.
-- **Zed:** `~/.config/zed/settings.json` under `mcp_servers` or `assistant.mcp.servers` (check latest Zed docs; format is similar).
-- **Windsurf:** `~/.windsurf/mcp_config.json` or `~/.codeium/windsurf/mcp_config.json`.
-- **Continue:** `~/.continue/config.json` under `models` or `mcpServers` (format may vary; prefer `mcpServers` if present).
-- **Generic / Claude Desktop:** `claude_desktop_config.json` located at `~/Library/Application Support/Claude/claude_desktop_config.json`.
-
-### Universal MCP server block
-
-```json
-"enowx-rag": {
-  "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
-  "env": {
-    "RAG_VECTOR_STORE": "qdrant",
-    "RAG_EMBEDDER": "tei",
-    "RAG_QDRANT_ADDR": "localhost:6334",
-    "RAG_TEI_URL": "http://localhost:8081"
-  }
-}
-```
-
-### Full per-tool examples
-
-#### Claude Code / Claude Desktop
-
-File: `~/Library/Application Support/Claude/claude_desktop_config.json`
-
+**JSON format (`.mcp.json` or `~/.claude.json`):**
 ```json
 {
   "mcpServers": {
@@ -232,30 +175,11 @@ File: `~/Library/Application Support/Claude/claude_desktop_config.json`
 }
 ```
 
-Claude Code also reads `CLAUDE.md` from the project root. Make sure to generate/update that file in the user's project.
+Source: https://code.claude.com/docs/en/mcp
 
-#### Cline
+### Claude Desktop
 
-File: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json`
-
-```json
-{
-  "mcpServers": {
-    "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
-      "env": {
-        "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
-        "RAG_TEI_URL": "http://localhost:8081"
-      }
-    }
-  }
-}
-```
-
-#### Claude Desktop / Claude Code
-
-File: `~/Library/Application Support/Claude/settings.json`
+**Config file:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -272,14 +196,42 @@ File: `~/Library/Application Support/Claude/settings.json`
 }
 ```
 
-#### OpenCode
+Source: https://code.claude.com/docs/en/mcp-quickstart
 
-File: `~/.opencode/settings.json` (or workspace `.opencode/mcp.json`)
+### Cline
+
+**Config file (IDE):** Open Cline panel > MCP Servers > Configure > Configure MCP Servers. This opens the settings JSON.
+**Config file (CLI):** `~/.cline/mcp.json`
 
 ```json
 {
   "mcpServers": {
     "enowx-rag": {
+      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "env": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_TEI_URL": "http://localhost:8081"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+Source: https://docs.cline.bot/mcp/configuring-mcp-servers
+
+### Cursor
+
+**Config file (global):** `~/.cursor/mcp.json`
+**Config file (project):** `.cursor/mcp.json` in project root
+
+```json
+{
+  "mcpServers": {
+    "enowx-rag": {
+      "type": "stdio",
       "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
@@ -291,16 +243,25 @@ File: `~/.opencode/settings.json` (or workspace `.opencode/mcp.json`)
 }
 ```
 
-#### Codex (OpenAI)
+Note: Cursor uses `"type": "stdio"` explicitly. Supports `${env:VAR_NAME}` interpolation.
 
-File: `~/.codex/config.json`
+Source: https://cursor.com/docs/mcp
+
+### OpenCode
+
+**Config file:** `~/.opencode/settings.json` (or `opencode.json` in project root)
+
+OpenCode uses a different schema: `mcp` key (not `mcpServers`), `command` as array (not string + args), `environment` (not `env`).
 
 ```json
 {
-  "mcpServers": {
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
     "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
-      "env": {
+      "type": "local",
+      "command": ["/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server"],
+      "enabled": true,
+      "environment": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_ADDR": "localhost:6334",
         "RAG_TEI_URL": "http://localhost:8081"
@@ -310,15 +271,94 @@ File: `~/.codex/config.json`
 }
 ```
 
-#### Factory Droid
+Source: https://opencode.ai/docs/mcp-servers/
 
-Factory Droid supports the standard `mcpServers` format. If the user uses `droid` CLI, they can run:
+### Codex (OpenAI)
 
+**Config file:** `~/.codex/config.toml` (TOML, not JSON)
+
+**CLI command:**
+```bash
+codex mcp add enowx-rag \
+  --env RAG_VECTOR_STORE=qdrant \
+  --env RAG_QDRANT_ADDR=localhost:6334 \
+  --env RAG_TEI_URL=http://localhost:8081 \
+  -- /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
+```
+
+**TOML format (`config.toml`):**
+```toml
+[mcp_servers.enowx-rag]
+command = "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server"
+
+[mcp_servers.enowx-rag.env]
+RAG_VECTOR_STORE = "qdrant"
+RAG_QDRANT_ADDR = "localhost:6334"
+RAG_TEI_URL = "http://localhost:8081"
+```
+
+Source: https://developers.openai.com/codex/mcp
+
+### Factory Droid
+
+**CLI command:**
 ```bash
 droid mcp add enowx-rag /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
 ```
 
-Or place the JSON in the Droid MCP settings if available:
+Source: Factory Droid CLI documentation
+
+### Roo Code
+
+**Config file (global):** Open Roo Code > MCP settings > Edit Global MCP (opens `mcp_settings.json`)
+**Config file (project):** `.roo/mcp.json` in project root
+
+```json
+{
+  "mcpServers": {
+    "enowx-rag": {
+      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "env": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_TEI_URL": "http://localhost:8081"
+      },
+      "alwaysAllow": [],
+      "disabled": false
+    }
+  }
+}
+```
+
+Source: https://docs.roocode.com/features/mcp/using-mcp-in-roo
+
+### Zed
+
+**Config file:** `~/.config/zed/settings.json` (JSON, but key is `context_servers`, not `mcpServers`)
+
+```json
+{
+  "context_servers": {
+    "enowx-rag": {
+      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "args": [],
+      "env": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_TEI_URL": "http://localhost:8081"
+      }
+    }
+  }
+}
+```
+
+Note: Zed also supports adding MCP servers via the UI: Command Palette > `agent: add context server`.
+
+Source: https://zed.dev/docs/ai/mcp
+
+### Windsurf
+
+**Config file:** `~/.codeium/windsurf/mcp_config.json`
 
 ```json
 {
@@ -335,107 +375,54 @@ Or place the JSON in the Droid MCP settings if available:
 }
 ```
 
-#### Cursor
+Note: Windsurf also supports adding MCP servers via the MCP Marketplace UI.
 
-File: `~/.cursor/mcp.json`
+Source: https://docs.windsurf.com/windsurf/cascade/mcp
 
-```json
-{
-  "mcpServers": {
-    "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
-      "env": {
-        "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
-        "RAG_TEI_URL": "http://localhost:8081"
-      }
-    }
-  }
-}
+### Continue
+
+**Config file:** `~/.continue/config.yaml` (YAML, not JSON)
+
+Continue uses a `mcpServers` list (array of objects, not a map). Each entry has `name`, `command`, `args`, `env`.
+
+```yaml
+mcpServers:
+  - name: enowx-rag
+    command: /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
+    env:
+      RAG_VECTOR_STORE: qdrant
+      RAG_QDRANT_ADDR: localhost:6334
+      RAG_TEI_URL: http://localhost:8081
 ```
 
-#### Roo Code
+Source: https://docs.continue.dev/reference (see `mcpServers` section)
 
-File: `~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo/settings.json` (or Roo MCP panel export)
+---
 
-```json
-{
-  "mcpServers": {
-    "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
-      "env": {
-        "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
-        "RAG_TEI_URL": "http://localhost:8081"
-      }
-    }
-  }
-}
-```
+## Quick reference table
 
-#### Zed
+| Tool | Format | Key | File |
+| --- | --- | --- | --- |
+| Claude Code | JSON | `mcpServers` | `~/.claude.json` or `.mcp.json` |
+| Claude Desktop | JSON | `mcpServers` | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Cline | JSON | `mcpServers` | `~/.cline/mcp.json` or IDE settings |
+| Cursor | JSON | `mcpServers` | `~/.cursor/mcp.json` or `.cursor/mcp.json` |
+| OpenCode | JSON | `mcp` | `~/.opencode/settings.json` or `opencode.json` |
+| Codex | TOML | `[mcp_servers.*]` | `~/.codex/config.toml` |
+| Factory Droid | CLI | — | `droid mcp add` |
+| Roo Code | JSON | `mcpServers` | global `mcp_settings.json` or `.roo/mcp.json` |
+| Zed | JSON | `context_servers` | `~/.config/zed/settings.json` |
+| Windsurf | JSON | `mcpServers` | `~/.codeium/windsurf/mcp_config.json` |
+| Continue | YAML | `mcpServers` (list) | `~/.continue/config.yaml` |
 
-File: `~/.config/zed/settings.json` (Zed format may vary; check `mcp_servers` key)
-
-```json
-{
-  "mcp_servers": {
-    "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
-      "env": {
-        "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
-        "RAG_TEI_URL": "http://localhost:8081"
-      }
-    }
-  }
-}
-```
-
-#### Windsurf
-
-File: `~/.windsurf/mcp_config.json` or `~/.codeium/windsurf/mcp_config.json`
-
-```json
-{
-  "mcpServers": {
-    "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
-      "env": {
-        "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
-        "RAG_TEI_URL": "http://localhost:8081"
-      }
-    }
-  }
-}
-```
-
-#### Continue
-
-File: `~/.continue/config.json` (use `mcpServers` if available)
-
-```json
-{
-  "mcpServers": {
-    "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
-      "env": {
-        "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
-        "RAG_TEI_URL": "http://localhost:8081"
-      }
-    }
-  }
-}
-```
+---
 
 ## Project agent instructions (AGENTS.md + CLAUDE.md)
 
 When setting up a project for RAG memory, generate or update two files in the project root:
 
 1. `AGENTS.md` — universal agent instructions.
-2. `CLAUDE.md` — Claude-family specific instructions (Claude Code, Cline, Cursor, etc.).
+2. `CLAUDE.md` — Claude-family specific instructions (Claude Code, Cline, etc.).
 
 These files remind every AI coding assistant to consult project memory before and after work.
 
@@ -529,12 +516,18 @@ After running the skill, produce a summary like this:
 - Qdrant gRPC: localhost:6334
 - TEI: http://localhost:8081
 
-### MCP client config
+### MCP client config installed
+- Claude Code: `~/.claude.json`
 - Claude Desktop: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Cline: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json`
-- Claude Desktop: `~/Library/Application Support/Claude/settings.json`
+- Cline: `~/.cline/mcp.json`
 - Cursor: `~/.cursor/mcp.json`
-- Factory Droid: `droid mcp add enowx-rag /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server`
+- OpenCode: `~/.opencode/settings.json`
+- Codex: `~/.codex/config.toml`
+- Factory Droid: `droid mcp add`
+- Roo Code: global `mcp_settings.json` or `.roo/mcp.json`
+- Zed: `~/.config/zed/settings.json`
+- Windsurf: `~/.codeium/windsurf/mcp_config.json`
+- Continue: `~/.continue/config.yaml`
 
 ### Project agent instructions
 Created:
@@ -561,9 +554,6 @@ curl -f http://localhost:8081/health
 
 # Build MCP server
 cd /Users/enowdev/Project/enowx-rag/mcp-server && go build ./cmd/mcp-server
-
-# Test MCP server is callable (optional, requires an MCP client)
-# Use Claude Code, Cline, or Factory Droid tool panel to call `rag_create_project`.
 ```
 
 ## Notes
