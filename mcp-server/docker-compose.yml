@@ -1,0 +1,55 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: enowx-rag-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  tei-embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.7
+    container_name: enowx-rag-tei
+    ports:
+      - "8081:80"
+    environment:
+      - MODEL_ID=BAAI/bge-small-en-v1.5
+      - RUST_LOG=info
+      - MAX_BATCH_TOKENS=16384
+    volumes:
+      - tei-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mcp-server:
+    build: .
+    container_name: enowx-rag-mcp-server
+    environment:
+      - RAG_VECTOR_STORE=qdrant
+      - RAG_EMBEDDER=tei
+      - RAG_QDRANT_ADDR=qdrant:6334
+      - RAG_TEI_URL=http://tei-embedding:80
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      tei-embedding:
+        condition: service_healthy
+    restart: unless-stopped
+    # stdio transport is not useful inside a detached container by default.
+    # This compose is primarily for the backend services; run mcp-server locally for stdio.
+    command: ["./mcp-server"]
+
+volumes:
+  qdrant-data:
+  tei-data:
