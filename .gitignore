@@ -1,0 +1,18 @@
+# Binaries
+mcp-server/mcp-server
+mcp-server/*.exe
+
+# Go
+*.log
+*.test
+*.out
+vendor/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Environment
+.env
+.env.local

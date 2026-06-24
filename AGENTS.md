@@ -96,7 +96,7 @@ Once installed, follow this workflow:
 
 ## Reference
 
-Full setup guide: https://github.com/enowX-Labs/enowx-rag/blob/main/README.md
+Full setup guide: https://github.com/enowdev/enowx-rag/blob/main/README.md
 
-Skill guide: https://github.com/enowX-Labs/enowx-rag/blob/main/skill/enowx-rag.md
+Skill guide: https://github.com/enowdev/enowx-rag/blob/main/skill/enowx-rag.md
 

@@ -49,6 +49,6 @@ Keep index chunks concise and tag metadata such as `type:architecture`, `type:de
 
 ## Reference
 
-- Setup guide: https://github.com/enowX-Labs/enowx-rag/blob/main/README.md
-- Skill guide: https://github.com/enowX-Labs/enowx-rag/blob/main/skill/enowx-rag.md
-- Agent install guide: https://github.com/enowX-Labs/enowx-rag/blob/main/AGENTS.md
+- Setup guide: https://github.com/enowdev/enowx-rag/blob/main/README.md
+- Skill guide: https://github.com/enowdev/enowx-rag/blob/main/skill/enowx-rag.md
+- Agent install guide: https://github.com/enowdev/enowx-rag/blob/main/AGENTS.md

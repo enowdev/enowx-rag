@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/enowX-Labs/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/pkg/rag"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

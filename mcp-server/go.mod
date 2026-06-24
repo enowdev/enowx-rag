@@ -1,4 +1,4 @@
-module github.com/enowX-Labs/enowx-rag
+module github.com/enowdev/enowx-rag
 
 go 1.26
 
