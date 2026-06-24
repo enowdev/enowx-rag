@@ -1,53 +1,56 @@
 package rag
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"net"
-	"strconv"
+	"io"
+	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
-	"github.com/qdrant/go-client/qdrant"
 )
 
-// QdrantProvider stores per-project vectors in Qdrant collections named "project_<id>".
+// QdrantProvider stores per-project vectors in Qdrant collections via REST API (no gRPC, no API key).
 type QdrantProvider struct {
-	client    *qdrant.Client
+	baseURL   string
 	embedder  EmbeddingClient
-	vectorDim uint64
+	vectorDim int
+	client    *http.Client
 }
 
-// NewQdrantProvider connects to Qdrant with the given gRPC endpoint and embedding client.
-// grpcAddr accepts either "host:port" or a full qdrant.Config URL; defaults to localhost:6334.
-func NewQdrantProvider(ctx context.Context, grpcAddr string, embedder EmbeddingClient) (*QdrantProvider, error) {
-	host, port, err := net.SplitHostPort(grpcAddr)
-	if err != nil {
-		// If it looks like a host without port, default to 6334.
-		host = grpcAddr
-		port = "6334"
-	}
-	portNum, _ := strconv.Atoi(port)
-
-	client, err := qdrant.NewClient(&qdrant.Config{Host: host, Port: portNum})
-	if err != nil {
-		return nil, fmt.Errorf("qdrant connect: %w", err)
-	}
-
-	if _, err := client.HealthCheck(ctx); err != nil {
-		return nil, fmt.Errorf("qdrant health check: %w", err)
-	}
-
-	dim := embedder.VectorSize()
-	if dim <= 0 {
-		dim = 384
-	}
-	return &QdrantProvider{
-		client:    client,
+// NewQdrantProvider connects to Qdrant via REST API.
+// baseURL should be the Qdrant REST endpoint, e.g. http://localhost:6333 or https://qdrant.example.com
+func NewQdrantProvider(ctx context.Context, baseURL string, embedder EmbeddingClient) (*QdrantProvider, error) {
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	p := &QdrantProvider{
+		baseURL:   baseURL,
 		embedder:  embedder,
-		vectorDim: uint64(dim),
-	}, nil
+		client:    &http.Client{},
+		vectorDim: embedder.VectorSize(),
+	}
+	if p.vectorDim <= 0 {
+		p.vectorDim = 384
+	}
+
+	// Health check
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/healthz", nil)
+	if err != nil {
+		return nil, fmt.Errorf("qdrant health check request: %w", err)
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("qdrant health check failed (is Qdrant running at %s?): %w", baseURL, err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("qdrant health check returned %d", resp.StatusCode)
+	}
+
+	return p, nil
 }
 
 func (p *QdrantProvider) collectionName(projectID string) string {
@@ -56,21 +59,17 @@ func (p *QdrantProvider) collectionName(projectID string) string {
 
 func (p *QdrantProvider) CreateCollection(ctx context.Context, projectID string) error {
 	name := p.collectionName(projectID)
-	return p.client.CreateCollection(ctx, &qdrant.CreateCollection{
-		CollectionName: name,
-		VectorsConfig: &qdrant.VectorsConfig{
-			Config: &qdrant.VectorsConfig_Params{
-				Params: &qdrant.VectorParams{
-					Size:     p.vectorDim,
-					Distance: qdrant.Distance_Cosine,
-				},
-			},
+	body := map[string]any{
+		"vectors": map[string]any{
+			"size":     p.vectorDim,
+			"distance": "Cosine",
 		},
-	})
+	}
+	return p.do(ctx, http.MethodPut, "/collections/"+name+"?wait=true", body, nil)
 }
 
 func (p *QdrantProvider) DeleteCollection(ctx context.Context, projectID string) error {
-	return p.client.DeleteCollection(ctx, p.collectionName(projectID))
+	return p.do(ctx, http.MethodDelete, "/collections/"+p.collectionName(projectID)+"?wait=true", nil, nil)
 }
 
 func (p *QdrantProvider) Index(ctx context.Context, projectID string, docs []Document) error {
@@ -91,29 +90,30 @@ func (p *QdrantProvider) Index(ctx context.Context, projectID string, docs []Doc
 		return fmt.Errorf("embedding count mismatch: got %d, want %d", len(vectors), len(docs))
 	}
 
-	points := make([]*qdrant.PointStruct, len(docs))
+	points := make([]map[string]any, len(docs))
 	for i, d := range docs {
 		id := d.ID
 		if id == "" {
 			id = uuid.NewString()
 		}
-		meta := make(map[string]*qdrant.Value, len(d.Meta)+1)
-		meta["content"] = &qdrant.Value{Kind: &qdrant.Value_StringValue{StringValue: d.Content}}
+		payload := map[string]any{"content": d.Content}
 		for k, v := range d.Meta {
-			meta[k] = &qdrant.Value{Kind: &qdrant.Value_StringValue{StringValue: v}}
+			payload[k] = v
 		}
-		points[i] = &qdrant.PointStruct{
-			Id:      &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: id}},
-			Payload: meta,
-			Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Data: vectors[i]}}},
+		// Convert []float32 to []float64 for JSON
+		vec := make([]float64, len(vectors[i]))
+		for j, x := range vectors[i] {
+			vec[j] = float64(x)
+		}
+		points[i] = map[string]any{
+			"id":       id,
+			"vector":   vec,
+			"payload":  payload,
 		}
 	}
 
-	_, err = p.client.Upsert(ctx, &qdrant.UpsertPoints{
-		CollectionName: name,
-		Points:         points,
-	})
-	return err
+	body := map[string]any{"points": points}
+	return p.do(ctx, http.MethodPut, "/collections/"+name+"/points?wait=true", body, nil)
 }
 
 func (p *QdrantProvider) SemanticSearch(ctx context.Context, projectID, query string, limit int) ([]Result, error) {
@@ -125,35 +125,44 @@ func (p *QdrantProvider) SemanticSearch(ctx context.Context, projectID, query st
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
 
-	limitU64 := uint64(limit)
-	resp, err := p.client.Query(ctx, &qdrant.QueryPoints{
-		CollectionName: p.collectionName(projectID),
-		Query: &qdrant.Query{Variant: &qdrant.Query_Nearest{
-			Nearest: &qdrant.VectorInput{Variant: &qdrant.VectorInput_Dense{
-				Dense: &qdrant.DenseVector{Data: vectors[0]},
-			}},
-		}},
-		Limit:       &limitU64,
-		WithPayload: &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("qdrant query: %w", err)
+	vec := make([]float64, len(vectors[0]))
+	for i, x := range vectors[0] {
+		vec[i] = float64(x)
 	}
 
-	out := make([]Result, 0, len(resp))
-	for _, r := range resp {
+	body := map[string]any{
+		"vector":      vec,
+		"limit":       limit,
+		"with_payload": true,
+	}
+
+	var resp struct {
+		Result []struct {
+			ID      any            `json:"id"`
+			Score   float64        `json:"score"`
+			Payload map[string]any `json:"payload"`
+		} `json:"result"`
+	}
+	if err := p.do(ctx, http.MethodPost, "/collections/"+p.collectionName(projectID)+"/points/search", body, &resp); err != nil {
+		return nil, fmt.Errorf("qdrant search: %w", err)
+	}
+
+	out := make([]Result, 0, len(resp.Result))
+	for _, r := range resp.Result {
 		content := ""
-		if v, ok := r.Payload["content"]; ok {
-			content = v.GetStringValue()
+		if v, ok := r.Payload["content"].(string); ok {
+			content = v
 		}
 		meta := make(map[string]string, len(r.Payload))
 		for k, v := range r.Payload {
-			meta[k] = v.GetStringValue()
+			if s, ok := v.(string); ok {
+				meta[k] = s
+			}
 		}
 		out = append(out, Result{
-			ID:      r.Id.GetUuid(),
+			ID:      fmt.Sprintf("%v", r.ID),
 			Content: content,
-			Score:   float64(r.Score),
+			Score:   r.Score,
 			Meta:    meta,
 		})
 	}
@@ -171,12 +180,41 @@ func (p *QdrantProvider) Embed(ctx context.Context, text string) ([]float32, err
 	return vectors[0], nil
 }
 
-func (p *QdrantProvider) Close() error {
-	return p.client.Close()
+func (p *QdrantProvider) Close() error { return nil }
+
+func (p *QdrantProvider) do(ctx context.Context, method, path string, body any, out any) error {
+	var bodyReader io.Reader
+	if body != nil {
+		buf := &bytes.Buffer{}
+		if err := json.NewEncoder(buf).Encode(body); err != nil {
+			return err
+		}
+		bodyReader = buf
+	}
+	req, err := http.NewRequestWithContext(ctx, method, p.baseURL+path, bodyReader)
+	if err != nil {
+		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("qdrant %s %s returned %d: %s", method, path, resp.StatusCode, string(b))
+	}
+	if out != nil {
+		return json.NewDecoder(resp.Body).Decode(out)
+	}
+	return nil
 }
 
 func sanitize(s string) string {
-	// Keep simple ASCII alphanumerics and underscores; hash the rest.
 	out := make([]byte, 0, len(s))
 	for i := 0; i < len(s); i++ {
 		c := s[i]

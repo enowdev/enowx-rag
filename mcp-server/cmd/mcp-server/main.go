@@ -15,23 +15,23 @@ import (
 
 // Config holds environment-based configuration for the RAG provider.
 type Config struct {
-	VectorStore  string // qdrant, chroma, pgvector
-	Embedder     string // tei, openai
-	QdrantAddr   string // gRPC address, e.g. localhost:6334
-	ChromaURL    string
-	PGVectorDSN  string
-	TEIBaseURL   string // e.g. http://localhost:8081
-	OpenAIKey    string
-	OpenAIBase   string
-	OpenAIModel  string
-	VectorDim    int
+	VectorStore string // qdrant, chroma, pgvector
+	Embedder    string // tei, openai
+	QdrantURL   string // REST URL, e.g. http://localhost:6333 or https://qdrant.example.com
+	ChromaURL   string
+	PGVectorDSN string
+	TEIBaseURL  string // e.g. http://localhost:8081
+	OpenAIKey   string
+	OpenAIBase  string
+	OpenAIModel string
+	VectorDim   int
 }
 
 func loadConfig() Config {
 	c := Config{
 		VectorStore: getEnv("RAG_VECTOR_STORE", "qdrant"),
 		Embedder:    getEnv("RAG_EMBEDDER", "tei"),
-		QdrantAddr:  getEnv("RAG_QDRANT_ADDR", "localhost:6334"),
+		QdrantURL:   getEnv("RAG_QDRANT_URL", "http://localhost:6333"),
 		ChromaURL:   getEnv("RAG_CHROMA_URL", "http://localhost:8000"),
 		PGVectorDSN: getEnv("RAG_PGVECTOR_DSN", ""),
 		TEIBaseURL:  getEnv("RAG_TEI_URL", "http://localhost:8081"),
@@ -63,7 +63,7 @@ func buildProvider(ctx context.Context, cfg Config) (rag.Provider, error) {
 
 	switch strings.ToLower(cfg.VectorStore) {
 	case "qdrant":
-		return rag.NewQdrantProvider(ctx, cfg.QdrantAddr, embedder)
+		return rag.NewQdrantProvider(ctx, cfg.QdrantURL, embedder)
 	case "chroma":
 		return rag.NewChromaProvider(cfg.ChromaURL, embedder), nil
 	case "pgvector":

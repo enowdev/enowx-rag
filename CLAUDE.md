@@ -32,7 +32,7 @@ Add this to the user's MCP client config (e.g. `~/.claude/config.json` or `claud
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_EMBEDDER": "tei",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }

@@ -24,7 +24,7 @@ Walk the user through installing the `enowx-rag` MCP server and optionally deplo
 1. **Detect context**
    - Check if the user already has a clone of `enowx-rag`.
    - **Ask first:** "Do you already have Qdrant and TEI installed and running?"
-     - If **yes**: ask for the Qdrant gRPC address and TEI URL, then continue to build MCP server.
+     - If **yes**: ask for the Qdrant REST URL and TEI URL, then continue to build MCP server.
      - If **no**: ask whether the user wants to install locally with Docker, and offer an embedding model suited to their hardware.
    - **Choose embedding model** (if installing locally):
      - Default: `BAAI/bge-small-en-v1.5` (384-dim, ~133 MB, good balance)
@@ -55,7 +55,7 @@ Ask these questions one at a time or in a compact batch:
 2. `backend_ready` - Do you already have Qdrant + TEI installed and running? (`yes`/`no`)
 3. If `yes`:
    - `vector_store` (`qdrant`/`chroma`/`pgvector`)
-   - `qdrant_addr` (host:port, e.g. `localhost:6334`)
+   - `qdrant_url` (REST URL, e.g. `http://localhost:6333`)
    - `tei_url` (e.g. `http://localhost:8081`)
    - `pgvector_dsn` (if vector_store is `pgvector`)
 4. If `no`:
@@ -83,7 +83,7 @@ Ask these questions one at a time or in a compact batch:
 ```bash
 RAG_VECTOR_STORE=qdrant
 RAG_EMBEDDER=tei
-RAG_QDRANT_ADDR=localhost:6334
+RAG_QDRANT_URL=http://localhost:6333
 RAG_TEI_URL=http://localhost:8081
 ```
 
@@ -92,7 +92,7 @@ RAG_TEI_URL=http://localhost:8081
 ```bash
 RAG_VECTOR_STORE=qdrant
 RAG_EMBEDDER=tei
-RAG_QDRANT_ADDR=localhost:6334
+RAG_QDRANT_URL=http://localhost:6333
 RAG_TEI_URL=http://localhost:8081
 RAG_MODEL_ID=BAAI/bge-small-en-v1.5
 ```
@@ -153,7 +153,7 @@ Each tool has a different config format and file location. Use these exact forma
 ```bash
 claude mcp add --transport stdio enowx-rag \
   --env RAG_VECTOR_STORE=qdrant \
-  --env RAG_QDRANT_ADDR=localhost:6334 \
+  --env RAG_QDRANT_URL=http://localhost:6333 \
   --env RAG_TEI_URL=http://localhost:8081 \
   -- /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
 ```
@@ -167,7 +167,7 @@ claude mcp add --transport stdio enowx-rag \
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_EMBEDDER": "tei",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -188,7 +188,7 @@ Source: https://code.claude.com/docs/en/mcp
       "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -210,7 +210,7 @@ Source: https://code.claude.com/docs/en/mcp-quickstart
       "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       },
       "disabled": false,
@@ -235,7 +235,7 @@ Source: https://docs.cline.bot/mcp/configuring-mcp-servers
       "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -263,7 +263,7 @@ OpenCode uses a different schema: `mcp` key (not `mcpServers`), `command` as arr
       "enabled": true,
       "environment": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -281,7 +281,7 @@ Source: https://opencode.ai/docs/mcp-servers/
 ```bash
 codex mcp add enowx-rag \
   --env RAG_VECTOR_STORE=qdrant \
-  --env RAG_QDRANT_ADDR=localhost:6334 \
+  --env RAG_QDRANT_URL=http://localhost:6333 \
   --env RAG_TEI_URL=http://localhost:8081 \
   -- /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
 ```
@@ -293,7 +293,7 @@ command = "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server"
 
 [mcp_servers.enowx-rag.env]
 RAG_VECTOR_STORE = "qdrant"
-RAG_QDRANT_ADDR = "localhost:6334"
+RAG_QDRANT_URL = "http://localhost:6333"
 RAG_TEI_URL = "http://localhost:8081"
 ```
 
@@ -320,7 +320,7 @@ Source: Factory Droid CLI documentation
       "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       },
       "alwaysAllow": [],
@@ -344,7 +344,7 @@ Source: https://docs.roocode.com/features/mcp/using-mcp-in-roo
       "args": [],
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -367,7 +367,7 @@ Source: https://zed.dev/docs/ai/mcp
       "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -391,7 +391,7 @@ mcpServers:
     command: /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
     env:
       RAG_VECTOR_STORE: qdrant
-      RAG_QDRANT_ADDR: localhost:6334
+      RAG_QDRANT_URL: http://localhost:6333
       RAG_TEI_URL: http://localhost:8081
 ```
 
@@ -570,7 +570,7 @@ After running the skill, produce a summary like this:
 
 ### Backend
 - Vector store: qdrant
-- Qdrant gRPC: localhost:6334
+- Qdrant REST: http://localhost:6333
 - TEI: http://localhost:8081
 
 ### MCP client config installed

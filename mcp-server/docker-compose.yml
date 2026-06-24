@@ -38,7 +38,7 @@ services:
     environment:
       - RAG_VECTOR_STORE=qdrant
       - RAG_EMBEDDER=tei
-      - RAG_QDRANT_ADDR=qdrant:6334
+      - RAG_QDRANT_URL=http://qdrant:6333
       - RAG_TEI_URL=http://tei-embedding:80
     depends_on:
       qdrant:

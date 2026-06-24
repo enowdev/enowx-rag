@@ -17,7 +17,7 @@ Then follow these steps:
 1. Clone the repo to my machine: git clone https://github.com/enowdev/enowx-rag.git
 2. Build the MCP server: cd enowx-rag/mcp-server && go build ./cmd/mcp-server
 3. Ask me: do I already have Qdrant and TEI running, or do I need a local install?
-   - If I have them: ask for the Qdrant gRPC address and TEI URL.
+   - If I have them: ask for the Qdrant REST URL and TEI URL.
    - If I don't: help me start them with docker compose, and let me pick an embedding model (offer a lightweight option if my PC is low-spec).
 4. Install the MCP server in every coding tool I use. Use the correct config format per tool (the README has all formats from official docs).
 5. For the project I'm currently working in, create or merge AGENTS.md and CLAUDE.md with RAG memory instructions. Use project ID derived from the folder name. Call rag_create_project to create the collection.
@@ -106,7 +106,7 @@ Each tool has a different config format and file location. Use the correct one p
 ```bash
 claude mcp add --transport stdio enowx-rag \
   --env RAG_VECTOR_STORE=qdrant \
-  --env RAG_QDRANT_ADDR=localhost:6334 \
+  --env RAG_QDRANT_URL=http://localhost:6333 \
   --env RAG_TEI_URL=http://localhost:8081 \
   -- /path/to/enowx-rag/mcp-server/mcp-server
 ```
@@ -119,7 +119,7 @@ claude mcp add --transport stdio enowx-rag \
       "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -138,7 +138,7 @@ claude mcp add --transport stdio enowx-rag \
       "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -157,7 +157,7 @@ claude mcp add --transport stdio enowx-rag \
       "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       },
       "disabled": false,
@@ -179,7 +179,7 @@ claude mcp add --transport stdio enowx-rag \
       "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -203,7 +203,7 @@ OpenCode uses `mcp` key (not `mcpServers`), `command` as array, and `environment
       "enabled": true,
       "environment": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -219,7 +219,7 @@ OpenCode uses `mcp` key (not `mcpServers`), `command` as array, and `environment
 ```bash
 codex mcp add enowx-rag \
   --env RAG_VECTOR_STORE=qdrant \
-  --env RAG_QDRANT_ADDR=localhost:6334 \
+  --env RAG_QDRANT_URL=http://localhost:6333 \
   --env RAG_TEI_URL=http://localhost:8081 \
   -- /path/to/enowx-rag/mcp-server/mcp-server
 ```
@@ -231,7 +231,7 @@ command = "/path/to/enowx-rag/mcp-server/mcp-server"
 
 [mcp_servers.enowx-rag.env]
 RAG_VECTOR_STORE = "qdrant"
-RAG_QDRANT_ADDR = "localhost:6334"
+RAG_QDRANT_URL = "http://localhost:6333"
 RAG_TEI_URL = "http://localhost:8081"
 ```
 
@@ -252,7 +252,7 @@ droid mcp add enowx-rag /path/to/enowx-rag/mcp-server/mcp-server
       "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       },
       "alwaysAllow": [],
@@ -276,7 +276,7 @@ Zed uses `context_servers` key (not `mcpServers`). Can also be added via UI: Com
       "args": [],
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -297,7 +297,7 @@ Can also be added via MCP Marketplace UI in Windsurf.
       "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_QDRANT_ADDR": "localhost:6334",
+        "RAG_QDRANT_URL": "http://localhost:6333",
         "RAG_TEI_URL": "http://localhost:8081"
       }
     }
@@ -317,7 +317,7 @@ mcpServers:
     command: /path/to/enowx-rag/mcp-server/mcp-server
     env:
       RAG_VECTOR_STORE: qdrant
-      RAG_QDRANT_ADDR: localhost:6334
+      RAG_QDRANT_URL: http://localhost:6333
       RAG_TEI_URL: http://localhost:8081
 ```
 
@@ -413,7 +413,7 @@ enowx-rag/
 | --- | --- | --- |
 | `RAG_VECTOR_STORE` | `qdrant` | `qdrant`, `chroma`, `pgvector` |
 | `RAG_EMBEDDER` | `tei` | `tei` |
-| `RAG_QDRANT_ADDR` | `localhost:6334` | Qdrant gRPC address |
+| `RAG_QDRANT_URL` | `http://localhost:6333` | Qdrant REST URL (HTTP, no API key) |
 | `RAG_CHROMA_URL` | `http://localhost:8000` | Chroma REST URL |
 | `RAG_PGVECTOR_DSN` | - | Postgres connection string |
 | `RAG_TEI_URL` | `http://localhost:8081` | Text Embeddings Inference URL |
