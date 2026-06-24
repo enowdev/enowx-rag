@@ -65,7 +65,7 @@ Use the same MCP server block in every tool. Only the file location changes.
 
 | Tool | Config file |
 | --- | --- |
-| Codebuddy Code / Codebuddy Desktop | `~/Library/Application Support/Codebuddy/claude_desktop_config.json` or `~/.claude/config.json` |
+| Claude Code / Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` or `~/.claude/config.json` |
 | Cline | `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json` |
 | Cursor | `~/.cursor/mcp.json` |
 | OpenCode | `~/.opencode/settings.json` |
@@ -83,7 +83,7 @@ Replace environment values if using Chroma or pgvector instead of Qdrant.
 If the user wants to enable RAG memory for a specific project, create these files in the target project root:
 
 - `AGENTS.md` — universal instructions for all AI agents.
-- `CLAUDE.md` — Codebuddy-family specific instructions.
+- `CLAUDE.md` — Claude-family specific instructions.
 
 Use the templates in `skill/templates/AGENTS.md` and adapt the `PROJECT_ID` placeholder to the target project name.
 

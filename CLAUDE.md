@@ -1,4 +1,4 @@
-# Codebuddy instructions for this project
+# Claude instructions for this project
 
 This project is `enowx-rag`, a per-project RAG memory MCP server.
 

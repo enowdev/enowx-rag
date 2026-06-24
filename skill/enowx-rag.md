@@ -17,7 +17,7 @@ Walk the user through installing the `enowx-rag` MCP server and optionally deplo
 - Do not expose secrets or API keys in plain text in the final output; store them in `.env` files.
 - If deploying to Coolify, prefer managed Docker services or the existing `robloxkit-rag` stack if healthy.
 - Do not modify the user's existing code repositories unless explicitly asked.
-- Keep the MCP server config snippet copy-pasteable for Codebuddy Desktop, Cline, or Cursor.
+- Keep the MCP server config snippet copy-pasteable for Claude Desktop, Cline, or Cursor.
 
 ## Setup flow
 
@@ -67,7 +67,7 @@ Ask these questions one at a time or in a compact batch:
    - `qdrant_rest_port` (default `6333`)
    - `qdrant_grpc_port` (default `6334`)
    - `hf_token` (optional, only if the chosen model is gated)
-5. `tools_to_install` — Which coding tools should use this MCP server? (Codebuddy, Cline, Cursor, OpenCode, Codex, Factory Droid, Roo, Zed, Windsurf, Continue). Provide configs for all of them anyway, but prioritize the ones the user selects.
+5. `tools_to_install` — Which coding tools should use this MCP server? (Claude, Cline, Cursor, OpenCode, Codex, Factory Droid, Roo, Zed, Windsurf, Continue). Provide configs for all of them anyway, but prioritize the ones the user selects.
 6. `target_project` — Path to the project that should receive `AGENTS.md` + `CLAUDE.md` (optional).
 
 ## Output artifacts
@@ -182,10 +182,10 @@ The same server block can be reused; only the file location differs. Use the abs
 
 #### macOS / Linux paths
 
-- **Codebuddy Code (anthropic CLI):** `~/.claude/CLAUDE.md` and `~/.claude/config.json` for MCP. MCP config is usually in `~/.claude/config.json` under `mcpServers`.
+- **Claude Code (anthropic CLI):** `~/.claude/CLAUDE.md` and `~/.claude/config.json` for MCP. MCP config is usually in `~/.claude/config.json` under `mcpServers`.
 - **Cline:** `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json`
-- **Codebuddy Desktop:** `~/Library/Application Support/Codebuddy/settings.json`
-- **Codebuddy Code (VS Code):** same as Codebuddy Desktop settings, or workspace `.vscode/mcp.json` if supported.
+- **Claude Desktop:** `~/Library/Application Support/Claude/settings.json`
+- **Claude Code (VS Code):** same as Claude Desktop settings, or workspace `.vscode/mcp.json` if supported.
 - **OpenCode:** `~/.opencode/settings.json` (or workspace `.opencode/mcp.json` if supported).
 - **Codex (OpenAI):** `~/.codex/config.json` or `~/.codex/settings.json` depending on version; look for `mcpServers`.
 - **Factory Droid:** place the same JSON under the Droid settings for MCP, or guide the user to run `droid mcp add <command>`. Factory Droid usually supports the same `mcpServers` format in its CLI config.
@@ -194,7 +194,7 @@ The same server block can be reused; only the file location differs. Use the abs
 - **Zed:** `~/.config/zed/settings.json` under `mcp_servers` or `assistant.mcp.servers` (check latest Zed docs; format is similar).
 - **Windsurf:** `~/.windsurf/mcp_config.json` or `~/.codeium/windsurf/mcp_config.json`.
 - **Continue:** `~/.continue/config.json` under `models` or `mcpServers` (format may vary; prefer `mcpServers` if present).
-- **Generic / Codebuddy Desktop:** `claude_desktop_config.json` located at `~/Library/Application Support/Codebuddy/claude_desktop_config.json`.
+- **Generic / Claude Desktop:** `claude_desktop_config.json` located at `~/Library/Application Support/Claude/claude_desktop_config.json`.
 
 ### Universal MCP server block
 
@@ -212,9 +212,9 @@ The same server block can be reused; only the file location differs. Use the abs
 
 ### Full per-tool examples
 
-#### Codebuddy Code / Codebuddy Desktop
+#### Claude Code / Claude Desktop
 
-File: `~/Library/Application Support/Codebuddy/claude_desktop_config.json`
+File: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -232,7 +232,7 @@ File: `~/Library/Application Support/Codebuddy/claude_desktop_config.json`
 }
 ```
 
-Codebuddy Code also reads `CLAUDE.md` from the project root. Make sure to generate/update that file in the user's project.
+Claude Code also reads `CLAUDE.md` from the project root. Make sure to generate/update that file in the user's project.
 
 #### Cline
 
@@ -253,9 +253,9 @@ File: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-
 }
 ```
 
-#### Codebuddy Desktop / Codebuddy Code
+#### Claude Desktop / Claude Code
 
-File: `~/Library/Application Support/Codebuddy/settings.json`
+File: `~/Library/Application Support/Claude/settings.json`
 
 ```json
 {
@@ -435,7 +435,7 @@ File: `~/.continue/config.json` (use `mcpServers` if available)
 When setting up a project for RAG memory, generate or update two files in the project root:
 
 1. `AGENTS.md` — universal agent instructions.
-2. `CLAUDE.md` — Codebuddy-family specific instructions (Codebuddy Code, Cline, Codebuddy, etc.).
+2. `CLAUDE.md` — Claude-family specific instructions (Claude Code, Cline, Cursor, etc.).
 
 These files remind every AI coding assistant to consult project memory before and after work.
 
@@ -489,7 +489,7 @@ Use project ID: `PROJECT_ID`
 ### CLAUDE.md template
 
 ```markdown
-# Codebuddy instructions for this project
+# Claude instructions for this project
 
 You are working with a project that has an `enowx-rag` MCP server installed.
 
@@ -530,9 +530,9 @@ After running the skill, produce a summary like this:
 - TEI: http://localhost:8081
 
 ### MCP client config
-- Codebuddy Desktop: `~/Library/Application Support/Codebuddy/claude_desktop_config.json`
+- Claude Desktop: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Cline: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json`
-- Codebuddy Desktop: `~/Library/Application Support/Codebuddy/settings.json`
+- Claude Desktop: `~/Library/Application Support/Claude/settings.json`
 - Cursor: `~/.cursor/mcp.json`
 - Factory Droid: `droid mcp add enowx-rag /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server`
 
@@ -563,7 +563,7 @@ curl -f http://localhost:8081/health
 cd /Users/enowdev/Project/enowx-rag/mcp-server && go build ./cmd/mcp-server
 
 # Test MCP server is callable (optional, requires an MCP client)
-# Use Codebuddy Code, Cline, or Factory Droid tool panel to call `rag_create_project`.
+# Use Claude Code, Cline, or Factory Droid tool panel to call `rag_create_project`.
 ```
 
 ## Notes

@@ -84,7 +84,7 @@ Use this universal MCP server block. Only the config file location changes.
 
 | Tool | Config file |
 | --- | --- |
-| Codebuddy Code / Codebuddy Desktop | `~/Library/Application Support/Codebuddy/claude_desktop_config.json` or `~/.claude/config.json` |
+| Claude Code / Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` or `~/.claude/config.json` |
 | Cline | `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/claude_mcp_settings.json` |
 | Cursor | `~/.cursor/mcp.json` |
 | OpenCode | `~/.opencode/settings.json` or `.opencode/mcp.json` |
@@ -126,7 +126,7 @@ Keep chunks concise (one idea per chunk). Use metadata tags like `type:architect
 ### `CLAUDE.md`
 
 ```markdown
-# Codebuddy instructions for this project
+# Claude instructions for this project
 
 Always consult project memory before making significant changes. Use `rag_retrieve_context` with project ID `PROJECT_ID`.
 
@@ -140,7 +140,7 @@ Always update project memory after completing work. Use `rag_index` to store con
 ```
 enowx-rag/
 ├── AGENTS.md           # Universal agent install guide (this repo)
-├── CLAUDE.md           # Codebuddy-family quick reference (this repo)
+├── CLAUDE.md           # Claude-family quick reference (this repo)
 ├── README.md           # This file
 ├── mcp-server/         # Go MCP server (stdio transport)
 │   ├── cmd/mcp-server
