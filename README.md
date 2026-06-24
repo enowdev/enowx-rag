@@ -353,6 +353,7 @@ This project uses the `enowx-rag` MCP server for per-project memory.
 
 1. Summarize what you changed.
 2. Call `rag_index` with useful new facts, design decisions, gotchas, or patterns under project ID `PROJECT_ID`.
+3. If files were added, changed, or deleted, call `rag_index_project` with the project directory to sync the codebase into RAG. This handles deletions automatically.
 
 Keep chunks concise (one idea per chunk). Use metadata tags like `type:architecture`, `type:decision`, `type:api`, `type:bugfix`, `type:howto`, or `type:snippet`.
 ```
@@ -422,7 +423,8 @@ enowx-rag/
 
 - `rag_create_project` — create a project collection
 - `rag_delete_project` — delete a project collection
-- `rag_index` — index documents into a project
+- `rag_index` — index individual documents into a project
+- `rag_index_project` — scan a directory and auto-index all code/text files. Handles insertions and deletions (removed files are purged from RAG). Skips node_modules, .git, vendor, dist, build.
 - `rag_semantic_search` — semantic search across project memory
 - `rag_retrieve_context` — compact context string for LLM consumption
 

@@ -150,6 +150,36 @@ func (p *ChromaProvider) Embed(ctx context.Context, text string) ([]float32, err
 	return vectors[0], nil
 }
 
+func (p *ChromaProvider) DeletePoints(ctx context.Context, projectID string, pointIDs []string) error {
+	if len(pointIDs) == 0 {
+		return nil
+	}
+	body := map[string]any{"ids": pointIDs}
+	return p.do(ctx, http.MethodPost, "/api/v1/collections/"+p.collectionName(projectID)+"/delete", body, nil)
+}
+
+func (p *ChromaProvider) ListPointIDs(ctx context.Context, projectID string, metaFilter map[string]string) ([]string, error) {
+	body := map[string]any{
+		"include": []string{"metadatas"},
+	}
+	if len(metaFilter) > 0 {
+		where := map[string]any{}
+		for k, v := range metaFilter {
+			where[k] = v
+		}
+		body["where"] = where
+	}
+	var resp chromaQueryResponse
+	if err := p.do(ctx, http.MethodPost, "/api/v1/collections/"+p.collectionName(projectID)+"/get", body, &resp); err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, batch := range resp.IDs {
+		ids = append(ids, batch...)
+	}
+	return ids, nil
+}
+
 func (p *ChromaProvider) Close() error { return nil }
 
 type chromaQueryResponse struct {

@@ -180,6 +180,59 @@ func (p *QdrantProvider) Embed(ctx context.Context, text string) ([]float32, err
 	return vectors[0], nil
 }
 
+func (p *QdrantProvider) DeletePoints(ctx context.Context, projectID string, pointIDs []string) error {
+	if len(pointIDs) == 0 {
+		return nil
+	}
+	body := map[string]any{"points": pointIDs}
+	return p.do(ctx, http.MethodPost, "/collections/"+p.collectionName(projectID)+"/points/delete?wait=true", body, nil)
+}
+
+func (p *QdrantProvider) ListPointIDs(ctx context.Context, projectID string, metaFilter map[string]string) ([]string, error) {
+	name := p.collectionName(projectID)
+	must := []map[string]any{}
+	for k, v := range metaFilter {
+		must = append(must, map[string]any{
+			"key": k,
+			"match": map[string]any{"value": v},
+		})
+	}
+
+	var allIDs []string
+	offset := 0
+	limit := 256
+	for {
+		body := map[string]any{
+			"limit":  limit,
+			"offset": offset,
+			"with_payload": false,
+			"with_vector":  false,
+		}
+		if len(must) > 0 {
+			body["filter"] = map[string]any{"must": must}
+		}
+		var resp struct {
+			Result struct {
+				Points []struct {
+					ID any `json:"id"`
+				} `json:"points"`
+				NextOffset any `json:"next_page_offset"`
+			} `json:"result"`
+		}
+		if err := p.do(ctx, http.MethodPost, "/collections/"+name+"/points/scroll", body, &resp); err != nil {
+			return nil, fmt.Errorf("qdrant scroll: %w", err)
+		}
+		for _, pt := range resp.Result.Points {
+			allIDs = append(allIDs, fmt.Sprintf("%v", pt.ID))
+		}
+		if resp.Result.NextOffset == nil {
+			break
+		}
+		offset = int(resp.Result.NextOffset.(float64))
+	}
+	return allIDs, nil
+}
+
 func (p *QdrantProvider) Close() error { return nil }
 
 func (p *QdrantProvider) do(ctx context.Context, method, path string, body any, out any) error {

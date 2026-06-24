@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/enowdev/enowx-rag/pkg/indexer"
 	"github.com/enowdev/enowx-rag/pkg/rag"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -103,6 +104,11 @@ type RetrieveContextInput struct {
 	Limit     int    `json:"limit" jsonschema:"Number of chunks to retrieve (default 5)"`
 }
 
+type ScanProjectInput struct {
+	ProjectID string `json:"project_id" jsonschema:"required,description=Project identifier"`
+	Directory string `json:"directory" jsonschema:"required,description=Absolute path to the project directory to scan and index"`
+}
+
 func main() {
 	cfg := loadConfig()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -176,6 +182,25 @@ func main() {
 		}
 		context := strings.Join(parts, "\n\n")
 		return nil, map[string]any{"context": context, "chunks": res}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rag_index_project",
+		Description: "Scan a project directory and auto-index all code/text files into RAG. Handles insertions (new/changed files) and deletions (removed files). Skips node_modules, .git, vendor, dist, build. Run this when the codebase changes.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in ScanProjectInput) (*mcp.CallToolResult, any, error) {
+		idx := indexer.NewIndexer(provider, 1500)
+		result, err := idx.IndexProject(ctx, in.ProjectID, in.Directory)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, map[string]any{
+			"status":        "synced",
+			"project_id":    in.ProjectID,
+			"chunks_indexed": result.Indexed,
+			"points_deleted": result.Deleted,
+			"files_scanned":  result.FilesScanned,
+			"stale_error":    result.StaleError,
+		}, nil
 	})
 
 	// Log tool configuration to stderr so it doesn't interfere with stdio transport.

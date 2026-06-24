@@ -14,7 +14,8 @@ You are working with a project that has an `enowx-rag` MCP server installed.
 
 1. Summarize what you changed and why.
 2. Call `rag_index` with useful new facts, design decisions, gotchas, or patterns under project ID `PROJECT_ID`.
-3. Keep chunks focused and concise (one idea per chunk). Include metadata tags when helpful.
+3. If files were added, changed, or deleted, call `rag_index_project` with the project directory to sync the codebase. This handles deletions automatically.
+4. Keep chunks focused and concise (one idea per chunk). Include metadata tags when helpful.
 
 ## Project ID
 

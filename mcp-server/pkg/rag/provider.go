@@ -36,6 +36,12 @@ type Provider interface {
 	// Embed returns the vector for a single text (useful for debugging).
 	Embed(ctx context.Context, text string) ([]float32, error)
 
+	// DeletePoints removes specific points by ID from the project collection.
+	DeletePoints(ctx context.Context, projectID string, pointIDs []string) error
+
+	// ListPointIDs returns all point IDs in the project collection, optionally filtered by metadata.
+	ListPointIDs(ctx context.Context, projectID string, metaFilter map[string]string) ([]string, error)
+
 	// Close releases resources.
 	Close() error
 }

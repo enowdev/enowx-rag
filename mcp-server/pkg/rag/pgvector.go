@@ -154,6 +154,39 @@ func (p *PGVectorProvider) Embed(ctx context.Context, text string) ([]float32, e
 	return vectors[0], nil
 }
 
+func (p *PGVectorProvider) DeletePoints(ctx context.Context, projectID string, pointIDs []string) error {
+	if len(pointIDs) == 0 {
+		return nil
+	}
+	_, err := p.pool.Exec(ctx, fmt.Sprintf(
+		"DELETE FROM %s WHERE project_id = $1 AND id = ANY($2)", p.table,
+	), projectID, pointIDs)
+	return err
+}
+
+func (p *PGVectorProvider) ListPointIDs(ctx context.Context, projectID string, metaFilter map[string]string) ([]string, error) {
+	q := fmt.Sprintf("SELECT id FROM %s WHERE project_id = $1", p.table)
+	args := []any{projectID}
+	if v, ok := metaFilter["source_file"]; ok {
+		q += " AND metadata->>'source_file' = $2"
+		args = append(args, v)
+	}
+	rows, err := p.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (p *PGVectorProvider) Close() error {
 	p.pool.Close()
 	return nil
