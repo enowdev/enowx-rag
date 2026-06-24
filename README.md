@@ -307,7 +307,15 @@ Replace `/path/to/enowx-rag/mcp-server/mcp-server` with the actual absolute path
 
 ## 5. Enable RAG memory for the target project
 
-Create these two files in the root of the project that should use RAG memory. Replace `PROJECT_ID` with the actual project name or slug.
+### Per-project collection
+
+Each project gets its own isolated collection in the vector store: `project_<PROJECT_ID>`. Call `rag_create_project` with the project ID to create it. Multiple projects share the same MCP server and backend, but each has isolated memory.
+
+### AGENTS.md and CLAUDE.md
+
+Create or update these two files in the root of the target project. Replace `PROJECT_ID` with the actual project name or slug.
+
+**Important: merge, do not replace.** If the file already exists, append the RAG section below existing content separated by `---`. Use the templates in `skill/templates/AGENTS.md` and `skill/templates/CLAUDE.md`.
 
 ### `AGENTS.md`
 
@@ -334,9 +342,21 @@ Keep chunks concise (one idea per chunk). Use metadata tags like `type:architect
 ```markdown
 # Claude instructions for this project
 
-Always consult project memory before making significant changes. Use `rag_retrieve_context` with project ID `PROJECT_ID`.
+## RAG memory workflow
 
-Always update project memory after completing work. Use `rag_index` to store concise new knowledge.
+### Before making significant changes
+
+1. Call `rag_retrieve_context` with the project ID `PROJECT_ID` and the user's query.
+2. Read the returned context. If it is empty or irrelevant, continue as normal.
+
+### After completing work
+
+1. Summarize what you changed and why.
+2. Call `rag_index` with useful new facts, design decisions, gotchas, or patterns under project ID `PROJECT_ID`.
+
+Use project ID: `PROJECT_ID`
+
+Each project has its own collection: `project_PROJECT_ID`. Do not mix project memories.
 ```
 
 ---

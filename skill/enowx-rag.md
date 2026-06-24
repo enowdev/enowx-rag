@@ -426,6 +426,24 @@ When setting up a project for RAG memory, generate or update two files in the pr
 
 These files remind every AI coding assistant to consult project memory before and after work.
 
+### Important: merge, do not replace
+
+If `AGENTS.md` or `CLAUDE.md` already exists in the target project, **append the RAG section to the existing content**. Do not overwrite the file. Follow these steps:
+
+1. Read the existing file.
+2. Check if an `enowx-rag` or `RAG memory` section already exists. If so, update it in place.
+3. If no RAG section exists, append the template content below the existing content, separated by a `---` divider.
+4. Preserve all existing instructions, rules, and project-specific content.
+
+### Per-project collection
+
+Each project gets its own isolated collection in the vector store. The collection name is `project_<project_id>`. When setting up a new project:
+
+1. Derive the `PROJECT_ID` from the project folder name, repo name, or ask the user.
+2. Call `rag_create_project` with the project ID to create the collection. This is safe to call even if the collection already exists.
+3. Multiple projects can share the same MCP server instance and backend. Each project's memory is isolated by collection name.
+4. Never mix project memories. Always use the correct `PROJECT_ID` when indexing or retrieving.
+
 ### AGENTS.md template
 
 ```markdown
@@ -480,17 +498,54 @@ Use project ID: `PROJECT_ID`
 
 You are working with a project that has an `enowx-rag` MCP server installed.
 
-Always consult project memory before making significant changes. Use tool:
+## RAG memory workflow
 
-- `rag_retrieve_context` — to get context for a query.
+### Before making significant changes
 
-Always update project memory after completing work. Use tool:
+1. Call `rag_retrieve_context` with the project ID `PROJECT_ID` and the user's query.
+2. Read the returned context. If it is empty or irrelevant, continue as normal.
+3. If the context changes how you would approach the task, explain the relevant insights briefly.
 
-- `rag_index` — to store concise chunks of new knowledge.
+### After completing work
+
+1. Summarize what you changed and why.
+2. Call `rag_index` with useful new facts, design decisions, gotchas, or patterns under project ID `PROJECT_ID`.
+3. Keep chunks focused and concise (one idea per chunk). Include metadata tags when helpful.
+
+## Project ID
 
 Use project ID: `PROJECT_ID`
 
-Keep index chunks small, factual, and tagged with metadata. Prefer updating context over repeating what is already known.
+## Metadata tags
+
+Use these tags when indexing:
+
+- `type:architecture`
+- `type:decision`
+- `type:api`
+- `type:bugfix`
+- `type:howto`
+- `type:snippet`
+
+## When to index
+
+- New endpoints, functions, or components.
+- Non-obvious configuration or environment setup.
+- Workarounds, known issues, or pitfalls.
+- Reusable code patterns.
+- Explanations of business/domain logic.
+
+## When to retrieve
+
+- Before answering questions about existing code or architecture.
+- Before planning new features that may overlap with existing systems.
+- Before debugging issues that may have been seen before.
+
+## Rules
+
+- Keep index chunks small, factual, and tagged with metadata.
+- Prefer updating context over repeating what is already known.
+- Each project has its own collection: `project_PROJECT_ID`. Do not mix project memories.
 ```
 
 Replace `PROJECT_ID` with the actual project identifier (e.g., repo name, slug, or UUID). Derive it from the project folder name or ask the user.
@@ -503,6 +558,8 @@ When generating these files, also remind the user to:
 - Keep them at the project root.
 - Update `PROJECT_ID` if the project is renamed.
 - Re-index the agent instructions themselves if the workflow changes.
+- If the file already exists, merge the RAG section instead of replacing the entire file.
+- Use templates from `skill/templates/AGENTS.md` and `skill/templates/CLAUDE.md` as the source for the RAG section.
 
 ## Example setup summary output
 

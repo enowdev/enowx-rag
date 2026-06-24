@@ -71,12 +71,14 @@ Replace environment values if using Chroma or pgvector instead of Qdrant.
 
 ## 5. Generate AGENTS.md and CLAUDE.md for the target project
 
-If the user wants to enable RAG memory for a specific project, create these files in the target project root:
+If the user wants to enable RAG memory for a specific project, create or update these files in the target project root:
 
 - `AGENTS.md` — universal instructions for all AI agents.
 - `CLAUDE.md` — Claude-family specific instructions.
 
-Use the templates in `skill/templates/AGENTS.md` and adapt the `PROJECT_ID` placeholder to the target project name.
+**Important: merge, do not replace.** If the file already exists, append the RAG section below existing content separated by `---`. Use templates from `skill/templates/AGENTS.md` and `skill/templates/CLAUDE.md`.
+
+**Per-project collection:** Each project gets its own collection `project_<PROJECT_ID>`. Call `rag_create_project` to create it. Multiple projects share the same MCP server, but each has isolated memory.
 
 ## 6. Always use RAG memory
 
@@ -84,6 +86,7 @@ Once installed, follow this workflow:
 
 - **Before coding:** call `rag_retrieve_context` with the user's query and the project ID.
 - **After coding:** call `rag_index` to save new knowledge, design decisions, gotchas, and reusable patterns.
+- Each project has its own collection. Never mix project memories.
 
 ## Reference
 
