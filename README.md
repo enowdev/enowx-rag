@@ -2,7 +2,27 @@
 
 Per-project RAG memory MCP server. Each project gets its own vector collection, so an LLM can index context about a codebase and retrieve it quickly.
 
-This README is designed to be copy-pasted by any AI agent to install both the **Factory Droid skill** and the **MCP server** in the user's environment.
+---
+
+## Quick setup (copy-paste this to your AI agent)
+
+Copy the prompt below and paste it into Claude Code, Cline, Cursor, OpenCode, Codex, Factory Droid, Roo, Zed, Windsurf, or Continue:
+
+```
+I want to set up enowx-rag, a per-project RAG memory MCP server.
+
+Read the setup guide at https://raw.githubusercontent.com/enowdev/enowx-rag/main/README.md and the skill at https://raw.githubusercontent.com/enowdev/enowx-rag/main/skill/enowx-rag.md
+
+Then follow these steps:
+1. Clone the repo to my machine: git clone https://github.com/enowdev/enowx-rag.git
+2. Build the MCP server: cd enowx-rag/mcp-server && go build ./cmd/mcp-server
+3. Ask me: do I already have Qdrant and TEI running, or do I need a local install?
+   - If I have them: ask for the Qdrant gRPC address and TEI URL.
+   - If I don't: help me start them with docker compose, and let me pick an embedding model (offer a lightweight option if my PC is low-spec).
+4. Install the MCP server in every coding tool I use. Use the correct config format per tool (the README has all formats from official docs).
+5. For the project I'm currently working in, create or merge AGENTS.md and CLAUDE.md with RAG memory instructions. Use project ID derived from the folder name. Call rag_create_project to create the collection.
+6. Do not replace existing AGENTS.md or CLAUDE.md. Append the RAG section with a --- separator.
+```
 
 ---
 
