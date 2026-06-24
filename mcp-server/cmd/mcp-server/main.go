@@ -75,32 +75,32 @@ func buildProvider(ctx context.Context, cfg Config) (rag.Provider, error) {
 
 // Tool inputs.
 type CreateProjectInput struct {
-	ProjectID string `json:"project_id" jsonschema:"required,description=Unique identifier for the project/collection"`
+	ProjectID string `json:"project_id" jsonschema:"Unique identifier for the project/collection"`
 }
 
 type DeleteProjectInput struct {
-	ProjectID string `json:"project_id" jsonschema:"required,description=Unique identifier for the project/collection"`
+	ProjectID string `json:"project_id" jsonschema:"Unique identifier for the project/collection"`
 }
 
 type IndexProjectInput struct {
-	ProjectID string `json:"project_id" jsonschema:"required,description=Project identifier"`
+	ProjectID string `json:"project_id" jsonschema:"Project identifier"`
 	Documents []struct {
-		ID      string            `json:"id" jsonschema:"description=Optional document ID; generated if empty"`
-		Content string            `json:"content" jsonschema:"required,description=Text to index"`
-		Meta    map[string]string `json:"meta" jsonschema:"description=Optional metadata key-value pairs"`
-	} `json:"documents" jsonschema:"required,description=Documents to index into the project memory"`
+		ID      string            `json:"id" jsonschema:"Optional document ID; generated if empty"`
+		Content string            `json:"content" jsonschema:"Text to index"`
+		Meta    map[string]string `json:"meta" jsonschema:"Optional metadata key-value pairs"`
+	} `json:"documents" jsonschema:"Documents to index into the project memory"`
 }
 
 type SemanticSearchInput struct {
-	ProjectID string `json:"project_id" jsonschema:"required,description=Project identifier"`
-	Query     string `json:"query" jsonschema:"required,description=Query text"`
-	Limit     int    `json:"limit" jsonschema:"description=Number of results to return (default 5)"`
+	ProjectID string `json:"project_id" jsonschema:"Project identifier"`
+	Query     string `json:"query" jsonschema:"Query text"`
+	Limit     int    `json:"limit" jsonschema:"Number of results to return (default 5)"`
 }
 
 type RetrieveContextInput struct {
-	ProjectID string `json:"project_id" jsonschema:"required,description=Project identifier"`
-	Query     string `json:"query" jsonschema:"required,description=Question or topic to retrieve context for"`
-	Limit     int    `json:"limit" jsonschema:"description=Number of chunks to retrieve (default 5)"`
+	ProjectID string `json:"project_id" jsonschema:"Project identifier"`
+	Query     string `json:"query" jsonschema:"Question or topic to retrieve context for"`
+	Limit     int    `json:"limit" jsonschema:"Number of chunks to retrieve (default 5)"`
 }
 
 func main() {
