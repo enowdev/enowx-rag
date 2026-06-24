@@ -105,8 +105,8 @@ type RetrieveContextInput struct {
 }
 
 type ScanProjectInput struct {
-	ProjectID string `json:"project_id" jsonschema:"required,description=Project identifier"`
-	Directory string `json:"directory" jsonschema:"required,description=Absolute path to the project directory to scan and index"`
+	ProjectID string `json:"project_id" jsonschema:"Project identifier"`
+	Directory string `json:"directory" jsonschema:"Absolute path to the project directory to scan and index"`
 }
 
 func main() {
