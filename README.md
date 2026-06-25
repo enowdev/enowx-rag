@@ -390,7 +390,7 @@ This project uses the `enowx-rag` MCP server for per-project memory.
 
 1. Summarize what you changed.
 2. Call `rag_index` with useful new facts, design decisions, gotchas, or patterns under project ID `PROJECT_ID`.
-3. If files were added, changed, or deleted, call `rag_index_project` with the project directory to sync the codebase into RAG. This handles deletions automatically.
+3. Call `rag_index_project` with the project directory to sync all file changes into RAG. Always do this — it handles new files, edits, and deletions automatically.
 
 Keep chunks concise (one idea per chunk). Use metadata tags like `type:architecture`, `type:decision`, `type:api`, `type:bugfix`, `type:howto`, or `type:snippet`.
 ```
