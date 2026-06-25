@@ -30,9 +30,11 @@ cd /Users/enowdev/Project/enowx-rag/mcp-server
 go build ./cmd/mcp-server
 ```
 
-## 3. Start the RAG backend (if local mode)
+## 3. Choose embedding option
 
-Use Docker Compose to start Qdrant and TEI:
+**Option A — Voyage AI (recommended):** No local setup needed. Get a free API key at [voyageai.com](https://voyageai.com) (`voyage-4` has 200M free tokens). Set `RAG_VOYAGE_API_KEY` in the MCP config.
+
+**Option B — Self-hosted TEI:** Start Qdrant + TEI with Docker:
 
 ```bash
 cd /Users/enowdev/Project/enowx-rag/mcp-server

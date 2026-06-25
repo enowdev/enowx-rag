@@ -13,7 +13,7 @@ cd /Users/enowdev/Project/enowx-rag/mcp-server
 go build ./cmd/mcp-server
 ```
 
-For local backend:
+For local backend (TEI fallback):
 
 ```bash
 cd /Users/enowdev/Project/enowx-rag/mcp-server
@@ -22,7 +22,25 @@ docker compose up -d qdrant tei-embedding
 
 ## MCP server config
 
-Add this to the user's MCP client config (e.g. `~/.claude/config.json` or `claude_desktop_config.json`):
+**Voyage AI (recommended):**
+
+```json
+{
+  "mcpServers": {
+    "enowx-rag": {
+      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "env": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_URL": "http://localhost:6333",
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
+      }
+    }
+  }
+}
+```
+
+**Self-hosted TEI:**
 
 ```json
 {

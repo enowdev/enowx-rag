@@ -33,7 +33,7 @@ type Config struct {
 func loadConfig() Config {
 	c := Config{
 		VectorStore:  getEnv("RAG_VECTOR_STORE", "qdrant"),
-		Embedder:     getEnv("RAG_EMBEDDER", "tei"),
+		Embedder:     getEnv("RAG_EMBEDDER", "voyage"),
 		QdrantURL:    getEnv("RAG_QDRANT_URL", "http://localhost:6333"),
 		ChromaURL:    getEnv("RAG_CHROMA_URL", "http://localhost:8000"),
 		PGVectorDSN:  getEnv("RAG_PGVECTOR_DSN", ""),
@@ -47,9 +47,9 @@ func loadConfig() Config {
 	if d, err := strconv.Atoi(os.Getenv("RAG_VECTOR_DIM")); err == nil && d > 0 {
 		c.VectorDim = d
 	}
-	// Auto-detect embedder from API key if not explicitly set
-	if c.Embedder == "tei" && c.VoyageAPIKey != "" {
-		c.Embedder = "voyage"
+	// Fall back to tei if voyage key is missing and embedder wasn't set explicitly
+	if c.Embedder == "voyage" && c.VoyageAPIKey == "" && os.Getenv("RAG_EMBEDDER") == "" {
+		c.Embedder = "tei"
 	}
 	return c
 }

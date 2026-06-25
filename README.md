@@ -153,6 +153,8 @@ claude mcp add --transport stdio enowx-rag \
 }
 ```
 
+All examples below use Voyage AI (recommended). Replace `RAG_VOYAGE_API_KEY` with `RAG_EMBEDDER=tei` + `RAG_TEI_URL` if using self-hosted TEI.
+
 ### Claude Desktop
 
 **File:** `~/Library/Application Support/Claude/claude_desktop_config.json`
@@ -165,7 +167,8 @@ claude mcp add --transport stdio enowx-rag \
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       }
     }
   }
@@ -184,7 +187,8 @@ claude mcp add --transport stdio enowx-rag \
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       },
       "disabled": false,
       "autoApprove": []
@@ -206,7 +210,8 @@ claude mcp add --transport stdio enowx-rag \
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       }
     }
   }
@@ -230,7 +235,8 @@ OpenCode uses `mcp` key (not `mcpServers`), `command` as array, and `environment
       "environment": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       }
     }
   }
@@ -246,7 +252,7 @@ OpenCode uses `mcp` key (not `mcpServers`), `command` as array, and `environment
 codex mcp add enowx-rag \
   --env RAG_VECTOR_STORE=qdrant \
   --env RAG_QDRANT_URL=http://localhost:6333 \
-  --env RAG_TEI_URL=http://localhost:8081 \
+  --env RAG_VOYAGE_API_KEY=your-voyage-api-key \
   -- /path/to/enowx-rag/mcp-server/mcp-server
 ```
 
@@ -258,7 +264,8 @@ command = "/path/to/enowx-rag/mcp-server/mcp-server"
 [mcp_servers.enowx-rag.env]
 RAG_VECTOR_STORE = "qdrant"
 RAG_QDRANT_URL = "http://localhost:6333"
-RAG_TEI_URL = "http://localhost:8081"
+RAG_VOYAGE_API_KEY = "your-voyage-api-key"
+RAG_VOYAGE_MODEL = "voyage-4"
 ```
 
 ### Factory Droid
@@ -279,7 +286,8 @@ droid mcp add enowx-rag /path/to/enowx-rag/mcp-server/mcp-server
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       },
       "alwaysAllow": [],
       "disabled": false
@@ -303,7 +311,8 @@ Zed uses `context_servers` key (not `mcpServers`). Can also be added via UI: Com
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       }
     }
   }
@@ -324,7 +333,8 @@ Can also be added via MCP Marketplace UI in Windsurf.
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       }
     }
   }
@@ -344,10 +354,11 @@ mcpServers:
     env:
       RAG_VECTOR_STORE: qdrant
       RAG_QDRANT_URL: http://localhost:6333
-      RAG_TEI_URL: http://localhost:8081
+      RAG_VOYAGE_API_KEY: your-voyage-api-key
+      RAG_VOYAGE_MODEL: voyage-4
 ```
 
-Replace `/path/to/enowx-rag/mcp-server/mcp-server` with the actual absolute path to the built binary. Replace environment values if using Chroma or pgvector instead of Qdrant.
+Replace `/path/to/enowx-rag/mcp-server/mcp-server` with the actual absolute path to the built binary.
 
 ---
 
@@ -475,7 +486,7 @@ cd mcp-server && docker compose up -d qdrant tei-embedding
 | Variable | Default | Description |
 | --- | --- | --- |
 | `RAG_VECTOR_STORE` | `qdrant` | `qdrant`, `chroma`, `pgvector` |
-| `RAG_EMBEDDER` | `tei` | `tei`, `voyage` (auto-detects `voyage` if `RAG_VOYAGE_API_KEY` is set) |
+| `RAG_EMBEDDER` | `voyage` | `voyage`, `tei` (falls back to `tei` if `RAG_VOYAGE_API_KEY` is not set) |
 | `RAG_QDRANT_URL` | `http://localhost:6333` | Qdrant REST URL |
 | `RAG_CHROMA_URL` | `http://localhost:8000` | Chroma REST URL |
 | `RAG_PGVECTOR_DSN` | - | Postgres connection string |

@@ -23,20 +23,17 @@ Walk the user through installing the `enowx-rag` MCP server and optionally deplo
 
 1. **Detect context**
    - Check if the user already has a clone of `enowx-rag`.
-   - **Ask first:** "Do you already have Qdrant and TEI installed and running?"
-     - If **yes**: ask for the Qdrant REST URL and TEI URL, then continue to build MCP server.
-     - If **no**: ask whether the user wants to install locally with Docker, and offer an embedding model suited to their hardware.
-   - **Choose embedding model** (if installing locally):
-     - Default: `BAAI/bge-small-en-v1.5` (384-dim, ~133 MB, good balance)
-     - Low-resource / older CPU: `sentence-transformers/all-MiniLM-L6-v2` (384-dim, smaller, faster)
-     - Better quality / more RAM: `BAAI/bge-base-en-v1.5` (768-dim, larger and slower)
-   - If existing backend: ask for vector store type (`qdrant`, `chroma`, `pgvector`), URLs, and any API keys.
-   - If local backend: generate or update `docker-compose.yml` for Qdrant + TEI with the chosen model.
+   - **Ask which embedding option they prefer:**
+     - **Voyage AI (recommended):** Hosted API, no GPU needed. Free at [voyageai.com](https://voyageai.com) — `voyage-4` has 200M free tokens. Ask for their API key.
+     - **Self-hosted TEI:** Runs locally via Docker. Ask if they already have Qdrant + TEI running, or offer to start them.
+   - If self-hosted TEI, ask for vector store type (`qdrant`, `chroma`, `pgvector`), Qdrant URL, and TEI URL (or offer Docker setup).
+   - If local TEI backend: generate or update `docker-compose.yml` for Qdrant + TEI.
 
-2. **Install / start the backend (when needed)**
+2. **Install / start the backend (when needed — TEI only)**
    - Verify Docker/Colima is available.
    - Run `docker compose up -d qdrant tei-embedding`.
    - Wait for health checks (`curl -f http://localhost:6333/healthz` and `curl -f http://localhost:8081/health`).
+   - Skip this step entirely when using Voyage AI.
 
 3. **Build / configure the MCP server**
    - Build the Go binary with `go build ./cmd/mcp-server`.
@@ -52,21 +49,19 @@ Walk the user through installing the `enowx-rag` MCP server and optionally deplo
 Ask these questions one at a time or in a compact batch:
 
 1. `project_path` - Where should the `enowx-rag` repository be created/cloned? (default: `/Users/enowdev/Project/enowx-rag`)
-2. `backend_ready` - Do you already have Qdrant + TEI installed and running? (`yes`/`no`)
-3. If `yes`:
+2. `embedder` - Which embedding option?
+   - **`voyage`** (default, recommended): hosted API, free at voyageai.com. Ask for `voyage_api_key`.
+   - **`tei`**: self-hosted. Ask for Qdrant URL + TEI URL, or offer Docker setup.
+3. If `voyage`:
+   - `voyage_api_key` — Voyage AI API key
+   - `voyage_model` (default `voyage-4`)
+   - `qdrant_url` (REST URL, e.g. `http://localhost:6333`)
+4. If `tei`:
    - `vector_store` (`qdrant`/`chroma`/`pgvector`)
    - `qdrant_url` (REST URL, e.g. `http://localhost:6333`)
    - `tei_url` (e.g. `http://localhost:8081`)
    - `pgvector_dsn` (if vector_store is `pgvector`)
-4. If `no`:
-   - `embedding_model` — choose from:
-     - `BAAI/bge-small-en-v1.5` (default, 384-dim, ~133 MB)
-     - `sentence-transformers/all-MiniLM-L6-v2` (lightweight, 384-dim, faster on low-end CPUs)
-     - `BAAI/bge-base-en-v1.5` (better quality, 768-dim, needs more RAM)
-   - `tei_port` (default `8081`)
-   - `qdrant_rest_port` (default `6333`)
-   - `qdrant_grpc_port` (default `6334`)
-   - `hf_token` (optional, only if the chosen model is gated)
+   - If no existing backend: `tei_port` (default `8081`), `qdrant_rest_port` (default `6333`), `qdrant_grpc_port` (default `6334`)
 5. `tools_to_install` — Which coding tools should use this MCP server?
 6. `target_project` — Path to the project that should receive `AGENTS.md` + `CLAUDE.md` (optional).
 
@@ -78,16 +73,16 @@ Ask these questions one at a time or in a compact batch:
 - Verification commands
 - `AGENTS.md` and `CLAUDE.md` in the target project (if requested)
 
-## Example `.env` (existing backend)
+## Example `.env` (Voyage AI — recommended)
 
 ```bash
 RAG_VECTOR_STORE=qdrant
-RAG_EMBEDDER=tei
 RAG_QDRANT_URL=http://localhost:6333
-RAG_TEI_URL=http://localhost:8081
+RAG_VOYAGE_API_KEY=your-voyage-api-key
+RAG_VOYAGE_MODEL=voyage-4
 ```
 
-## Example `.env` (local backend)
+## Example `.env` (self-hosted TEI)
 
 ```bash
 RAG_VECTOR_STORE=qdrant
@@ -145,6 +140,8 @@ volumes:
 
 Each tool has a different config format and file location. Use these exact formats.
 
+Each config block below shows the Voyage AI setup (recommended). Replace with `RAG_EMBEDDER=tei` + `RAG_TEI_URL` if using self-hosted TEI instead.
+
 ### Claude Code (Anthropic CLI)
 
 **Config file:** `~/.claude.json` (user scope) or `.mcp.json` in project root (project scope)
@@ -154,7 +151,7 @@ Each tool has a different config format and file location. Use these exact forma
 claude mcp add --transport stdio enowx-rag \
   --env RAG_VECTOR_STORE=qdrant \
   --env RAG_QDRANT_URL=http://localhost:6333 \
-  --env RAG_TEI_URL=http://localhost:8081 \
+  --env RAG_VOYAGE_API_KEY=your-voyage-api-key \
   -- /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
 ```
 
@@ -166,9 +163,9 @@ claude mcp add --transport stdio enowx-rag \
       "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
-        "RAG_EMBEDDER": "tei",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       }
     }
   }
@@ -189,7 +186,8 @@ Source: https://code.claude.com/docs/en/mcp
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       }
     }
   }
@@ -211,7 +209,8 @@ Source: https://code.claude.com/docs/en/mcp-quickstart
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       },
       "disabled": false,
       "autoApprove": []
@@ -236,7 +235,8 @@ Source: https://docs.cline.bot/mcp/configuring-mcp-servers
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       }
     }
   }
@@ -264,7 +264,8 @@ OpenCode uses a different schema: `mcp` key (not `mcpServers`), `command` as arr
       "environment": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       }
     }
   }
@@ -282,7 +283,7 @@ Source: https://opencode.ai/docs/mcp-servers/
 codex mcp add enowx-rag \
   --env RAG_VECTOR_STORE=qdrant \
   --env RAG_QDRANT_URL=http://localhost:6333 \
-  --env RAG_TEI_URL=http://localhost:8081 \
+  --env RAG_VOYAGE_API_KEY=your-voyage-api-key \
   -- /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
 ```
 
@@ -294,7 +295,8 @@ command = "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server"
 [mcp_servers.enowx-rag.env]
 RAG_VECTOR_STORE = "qdrant"
 RAG_QDRANT_URL = "http://localhost:6333"
-RAG_TEI_URL = "http://localhost:8081"
+RAG_VOYAGE_API_KEY = "your-voyage-api-key"
+RAG_VOYAGE_MODEL = "voyage-4"
 ```
 
 Source: https://developers.openai.com/codex/mcp
@@ -321,7 +323,8 @@ Source: Factory Droid CLI documentation
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       },
       "alwaysAllow": [],
       "disabled": false
@@ -345,7 +348,8 @@ Source: https://docs.roocode.com/features/mcp/using-mcp-in-roo
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       }
     }
   }
@@ -368,7 +372,8 @@ Source: https://zed.dev/docs/ai/mcp
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
-        "RAG_TEI_URL": "http://localhost:8081"
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
       }
     }
   }
@@ -392,7 +397,8 @@ mcpServers:
     env:
       RAG_VECTOR_STORE: qdrant
       RAG_QDRANT_URL: http://localhost:6333
-      RAG_TEI_URL: http://localhost:8081
+      RAG_VOYAGE_API_KEY: your-voyage-api-key
+      RAG_VOYAGE_MODEL: voyage-4
 ```
 
 Source: https://docs.continue.dev/reference (see `mcpServers` section)
@@ -573,7 +579,7 @@ After running the skill, produce a summary like this:
 ### Backend
 - Vector store: qdrant
 - Qdrant REST: http://localhost:6333
-- TEI: http://localhost:8081
+- Embedder: voyage-4 (Voyage AI)
 
 ### MCP client config installed
 - Claude Code: `~/.claude.json`
@@ -594,10 +600,9 @@ Created:
 - `/path/to/project/CLAUDE.md`
 
 ### Next steps
-1. Start the backend: `cd /Users/enowdev/Project/enowx-rag/mcp-server && docker compose up -d qdrant tei-embedding`
-2. Build MCP server: `cd /Users/enowdev/Project/enowx-rag/mcp-server && go build ./cmd/mcp-server`
-3. Restart your coding tool or reload MCP server list.
-4. Test by asking the agent to retrieve project context.
+1. Build MCP server: `cd /Users/enowdev/Project/enowx-rag/mcp-server && go build ./cmd/mcp-server`
+2. Restart your coding tool or reload MCP server list.
+3. Test by asking the agent to retrieve project context.
 ```
 
 ## Verification checklist
@@ -605,10 +610,10 @@ Created:
 After setup, verify with these commands:
 
 ```bash
-# Qdrant health
+# Qdrant health (always needed)
 curl -f http://localhost:6333/healthz
 
-# TEI health
+# TEI health (only if using self-hosted TEI)
 curl -f http://localhost:8081/health
 
 # Build MCP server
@@ -619,5 +624,5 @@ cd /Users/enowdev/Project/enowx-rag/mcp-server && go build ./cmd/mcp-server
 
 - The MCP server uses stdio transport by default.
 - Each project gets its own collection/index: `project_<project_id>`.
-- The `robloxkit-rag` Coolify service already exposes Qdrant on `localhost:6333` and TEI on `localhost:8081` if Colima/Docker is running.
+- Default embedder is `voyage-4` (Voyage AI). Falls back to TEI if `RAG_VOYAGE_API_KEY` is not set and `RAG_EMBEDDER` is not specified.
 - `AGENTS.md` and `CLAUDE.md` are opt-in: generate them only when the user says yes or asks to enable "always use RAG memory for this project".
