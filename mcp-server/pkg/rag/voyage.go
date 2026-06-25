@@ -22,7 +22,7 @@ type VoyageEmbeddingClient struct {
 }
 
 // NewVoyageEmbeddingClient creates a Voyage AI embedding client.
-// model defaults to "voyage-3.5" if empty.
+// model defaults to "voyage-4" if empty.
 func NewVoyageEmbeddingClient(apiKey, model string) *VoyageEmbeddingClient {
 	if model == "" {
 		model = "voyage-4"
@@ -123,7 +123,7 @@ func (c *VoyageEmbeddingClient) embedBatch(ctx context.Context, texts []string, 
 	return vecs, nil
 }
 
-// VectorSize returns 1024 (voyage-3.5 default dimension).
+// VectorSize returns 1024 (voyage-4 default dimension).
 func (c *VoyageEmbeddingClient) VectorSize() int {
 	return 1024
 }

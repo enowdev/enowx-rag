@@ -16,9 +16,9 @@ Read the setup guide at https://raw.githubusercontent.com/enowdev/enowx-rag/main
 Then follow these steps:
 1. Clone the repo to my machine: git clone https://github.com/enowdev/enowx-rag.git
 2. Build the MCP server: cd enowx-rag/mcp-server && go build ./cmd/mcp-server
-3. Ask me: do I already have Qdrant and TEI running, or do I need a local install?
-   - If I have them: ask for the Qdrant REST URL and TEI URL.
-   - If I don't: help me start them with docker compose, and let me pick an embedding model (offer a lightweight option if my PC is low-spec).
+3. Ask me which embedding option I prefer:
+   - **Voyage AI** (recommended): no local setup needed, ask for my Voyage API key (free at voyageai.com, 200M free tokens with voyage-4).
+   - **Self-hosted TEI**: start Qdrant + TEI with docker compose. Ask for Qdrant URL if I already have one running.
 4. Install the MCP server in every coding tool I use. Use the correct config format per tool (the README has all formats from official docs).
 5. For the project I'm currently working in, create or merge AGENTS.md and CLAUDE.md with RAG memory instructions. Use project ID derived from the folder name. Call rag_create_project to create the collection.
 6. Do not replace existing AGENTS.md or CLAUDE.md. Append the RAG section with a --- separator.
@@ -102,7 +102,16 @@ Each tool has a different config format and file location. Use the correct one p
 
 ### Claude Code
 
-**CLI:**
+**CLI (Voyage AI):**
+```bash
+claude mcp add --transport stdio enowx-rag \
+  --env RAG_VECTOR_STORE=qdrant \
+  --env RAG_QDRANT_URL=http://localhost:6333 \
+  --env RAG_VOYAGE_API_KEY=your-voyage-api-key \
+  -- /path/to/enowx-rag/mcp-server/mcp-server
+```
+
+**CLI (self-hosted TEI):**
 ```bash
 claude mcp add --transport stdio enowx-rag \
   --env RAG_VECTOR_STORE=qdrant \
@@ -111,7 +120,24 @@ claude mcp add --transport stdio enowx-rag \
   -- /path/to/enowx-rag/mcp-server/mcp-server
 ```
 
-**JSON (`~/.claude.json` or `.mcp.json`):**
+**JSON (`~/.claude.json` or `.mcp.json`) — Voyage AI:**
+```json
+{
+  "mcpServers": {
+    "enowx-rag": {
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
+      "env": {
+        "RAG_VECTOR_STORE": "qdrant",
+        "RAG_QDRANT_URL": "http://localhost:6333",
+        "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+        "RAG_VOYAGE_MODEL": "voyage-4"
+      }
+    }
+  }
+}
+```
+
+**JSON — self-hosted TEI:**
 ```json
 {
   "mcpServers": {
@@ -404,20 +430,58 @@ enowx-rag/
 
 | Vector store | Embedder | Status |
 | --- | --- | --- |
-| Qdrant | TEI | Ready |
-| Chroma | TEI | Ready |
-| pgvector | TEI | Ready |
+| Qdrant | TEI (self-hosted) | Ready |
+| Qdrant | Voyage AI | Ready |
+| Chroma | TEI (self-hosted) | Ready |
+| pgvector | TEI (self-hosted) | Ready |
+
+## Embedding options
+
+### Option A: Voyage AI (recommended, hosted)
+
+No GPU required. Get a free API key at [voyageai.com](https://voyageai.com). `voyage-4` has 200M free tokens.
+
+Set `RAG_EMBEDDER=voyage` (or just set `RAG_VOYAGE_API_KEY` — it auto-detects):
+
+```json
+"env": {
+  "RAG_VECTOR_STORE": "qdrant",
+  "RAG_QDRANT_URL": "http://localhost:6333",
+  "RAG_EMBEDDER": "voyage",
+  "RAG_VOYAGE_API_KEY": "your-voyage-api-key",
+  "RAG_VOYAGE_MODEL": "voyage-4"
+}
+```
+
+### Option B: TEI (self-hosted)
+
+Runs a local Text Embeddings Inference container. Requires Docker and ~1 GB of RAM.
+
+```bash
+cd mcp-server && docker compose up -d qdrant tei-embedding
+```
+
+```json
+"env": {
+  "RAG_VECTOR_STORE": "qdrant",
+  "RAG_QDRANT_URL": "http://localhost:6333",
+  "RAG_EMBEDDER": "tei",
+  "RAG_TEI_URL": "http://localhost:8081"
+}
+```
 
 ## Environment variables
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `RAG_VECTOR_STORE` | `qdrant` | `qdrant`, `chroma`, `pgvector` |
-| `RAG_EMBEDDER` | `tei` | `tei` |
-| `RAG_QDRANT_URL` | `http://localhost:6333` | Qdrant REST URL (HTTP, no API key) |
+| `RAG_EMBEDDER` | `tei` | `tei`, `voyage` (auto-detects `voyage` if `RAG_VOYAGE_API_KEY` is set) |
+| `RAG_QDRANT_URL` | `http://localhost:6333` | Qdrant REST URL |
 | `RAG_CHROMA_URL` | `http://localhost:8000` | Chroma REST URL |
 | `RAG_PGVECTOR_DSN` | - | Postgres connection string |
 | `RAG_TEI_URL` | `http://localhost:8081` | Text Embeddings Inference URL |
+| `RAG_VOYAGE_API_KEY` | - | Voyage AI API key (required when `RAG_EMBEDDER=voyage`) |
+| `RAG_VOYAGE_MODEL` | `voyage-4` | Voyage AI model name |
 
 ## Tools
 
