@@ -42,6 +42,10 @@ type Provider interface {
 	// ListPointIDs returns all point IDs in the project collection, optionally filtered by metadata.
 	ListPointIDs(ctx context.Context, projectID string, metaFilter map[string]string) ([]string, error)
 
+	// ListPoints returns all points (ID + source_file payload) in the project
+	// collection, optionally filtered by metadata.
+	ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error)
+
 	// Close releases resources.
 	Close() error
 }

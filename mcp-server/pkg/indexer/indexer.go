@@ -18,10 +18,12 @@ type Indexer struct {
 }
 
 // NewIndexer creates an indexer with the given provider.
-// chunkSize is the max characters per chunk (default 1500).
+// chunkSize is the max characters per chunk (default 1000). The default is
+// chosen so a chunk plus its "File: <path>" prefix stays under the TEI
+// embedding model's 512-token input limit (code averages ~3 chars/token).
 func NewIndexer(provider rag.Provider, chunkSize int) *Indexer {
 	if chunkSize <= 0 {
-		chunkSize = 1500
+		chunkSize = 1000
 	}
 	return &Indexer{provider: provider, chunkSize: chunkSize}
 }
@@ -109,7 +111,8 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 
 	// Index new/changed documents.
 	if len(docs) > 0 {
-		// Batch index (max 100 at a time to avoid huge requests)
+		// Batch index 100 docs per provider call to bound request size. The TEI
+		// embedding client sub-batches these further to respect its own limit.
 		for i := 0; i < len(docs); i += 100 {
 			end := i + 100
 			if end > len(docs) {
@@ -153,33 +156,21 @@ func (idx *Indexer) findStalePoints(ctx context.Context, projectID string, curre
 		currentSet[f] = true
 	}
 
-	// List all points that have source_file metadata.
-	allIDs, err := idx.provider.ListPointIDs(ctx, projectID, nil)
+	// List all points with their source_file payload. Point IDs are opaque
+	// UUIDs, so we reconcile against the current file set via the payload, not
+	// by parsing the ID.
+	points, err := idx.provider.ListPoints(ctx, projectID, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// We need to also know which source_file each point belongs to.
-	// Since ListPointIDs only returns IDs, we need to check by file.
-	// Strategy: for each file that was previously indexed but is now gone, delete its points.
-	// We can't easily get source_file from ListPointIDs alone, so we use a different approach:
-	// list all points, then for each, check if its source_file is in currentSet.
-	// But that requires payload. Let's use a simpler approach: just re-index everything.
-	// The upsert will overwrite existing points with the same ID.
-	// For deletion, we need to know which files were removed.
-	// Since point IDs contain the file path (format: "path/to/file.go#chunk0"),
-	// we can extract source_file from the ID.
-
 	var stale []string
-	for _, id := range allIDs {
-		// ID format: "path/to/file.go#chunk0"
-		parts := strings.Split(id, "#")
-		if len(parts) < 2 {
+	for _, pt := range points {
+		if pt.SourceFile == "" {
 			continue
 		}
-		sourceFile := parts[0]
-		if !currentSet[sourceFile] {
-			stale = append(stale, id)
+		if !currentSet[pt.SourceFile] {
+			stale = append(stale, pt.ID)
 		}
 	}
 	return stale, nil
@@ -196,17 +187,30 @@ func chunkText(text string, maxChars int) []string {
 	lines := strings.Split(text, "\n")
 	var current strings.Builder
 
-	for _, line := range lines {
-		if current.Len()+len(line)+1 > maxChars && current.Len() > 0 {
+	flush := func() {
+		if current.Len() > 0 {
 			chunks = append(chunks, current.String())
 			current.Reset()
+		}
+	}
+
+	for _, line := range lines {
+		// A single line longer than maxChars (e.g. minified/generated code)
+		// cannot fit in any chunk on its own, so hard-split it on byte
+		// boundaries. Without this the line would be emitted whole and exceed
+		// the embedding model's token limit.
+		for len(line) > maxChars {
+			flush()
+			chunks = append(chunks, line[:maxChars])
+			line = line[maxChars:]
+		}
+		if current.Len()+len(line)+1 > maxChars && current.Len() > 0 {
+			flush()
 		}
 		current.WriteString(line)
 		current.WriteString("\n")
 	}
-	if current.Len() > 0 {
-		chunks = append(chunks, current.String())
-	}
+	flush()
 	return chunks
 }
 

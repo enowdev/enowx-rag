@@ -16,32 +16,40 @@ import (
 
 // Config holds environment-based configuration for the RAG provider.
 type Config struct {
-	VectorStore string // qdrant, chroma, pgvector
-	Embedder    string // tei, openai
-	QdrantURL   string // REST URL, e.g. http://localhost:6333 or https://qdrant.example.com
-	ChromaURL   string
-	PGVectorDSN string
-	TEIBaseURL  string // e.g. http://localhost:8081
-	OpenAIKey   string
-	OpenAIBase  string
-	OpenAIModel string
-	VectorDim   int
+	VectorStore  string // qdrant, chroma, pgvector
+	Embedder     string // tei, openai, voyage
+	QdrantURL    string // REST URL, e.g. http://localhost:6333 or https://qdrant.example.com
+	ChromaURL    string
+	PGVectorDSN  string
+	TEIBaseURL   string // e.g. http://localhost:8081
+	OpenAIKey    string
+	OpenAIBase   string
+	OpenAIModel  string
+	VoyageAPIKey string // Voyage AI API key
+	VoyageModel  string // e.g. voyage-3.5
+	VectorDim    int
 }
 
 func loadConfig() Config {
 	c := Config{
-		VectorStore: getEnv("RAG_VECTOR_STORE", "qdrant"),
-		Embedder:    getEnv("RAG_EMBEDDER", "tei"),
-		QdrantURL:   getEnv("RAG_QDRANT_URL", "http://localhost:6333"),
-		ChromaURL:   getEnv("RAG_CHROMA_URL", "http://localhost:8000"),
-		PGVectorDSN: getEnv("RAG_PGVECTOR_DSN", ""),
-		TEIBaseURL:  getEnv("RAG_TEI_URL", "http://localhost:8081"),
-		OpenAIKey:   getEnv("RAG_OPENAI_API_KEY", ""),
-		OpenAIBase:  getEnv("RAG_OPENAI_BASE_URL", "https://api.openai.com/v1"),
-		OpenAIModel: getEnv("RAG_OPENAI_MODEL", "text-embedding-3-small"),
+		VectorStore:  getEnv("RAG_VECTOR_STORE", "qdrant"),
+		Embedder:     getEnv("RAG_EMBEDDER", "tei"),
+		QdrantURL:    getEnv("RAG_QDRANT_URL", "http://localhost:6333"),
+		ChromaURL:    getEnv("RAG_CHROMA_URL", "http://localhost:8000"),
+		PGVectorDSN:  getEnv("RAG_PGVECTOR_DSN", ""),
+		TEIBaseURL:   getEnv("RAG_TEI_URL", "http://localhost:8081"),
+		OpenAIKey:    getEnv("RAG_OPENAI_API_KEY", ""),
+		OpenAIBase:   getEnv("RAG_OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		OpenAIModel:  getEnv("RAG_OPENAI_MODEL", "text-embedding-3-small"),
+		VoyageAPIKey: getEnv("RAG_VOYAGE_API_KEY", ""),
+		VoyageModel:  getEnv("RAG_VOYAGE_MODEL", "voyage-4"),
 	}
 	if d, err := strconv.Atoi(os.Getenv("RAG_VECTOR_DIM")); err == nil && d > 0 {
 		c.VectorDim = d
+	}
+	// Auto-detect embedder from API key if not explicitly set
+	if c.Embedder == "tei" && c.VoyageAPIKey != "" {
+		c.Embedder = "voyage"
 	}
 	return c
 }
@@ -58,6 +66,11 @@ func buildProvider(ctx context.Context, cfg Config) (rag.Provider, error) {
 	switch strings.ToLower(cfg.Embedder) {
 	case "tei":
 		embedder = rag.NewTEIEmbeddingClient(cfg.TEIBaseURL)
+	case "voyage":
+		if cfg.VoyageAPIKey == "" {
+			return nil, fmt.Errorf("RAG_VOYAGE_API_KEY is required for voyage embedder")
+		}
+		embedder = rag.NewVoyageEmbeddingClient(cfg.VoyageAPIKey, cfg.VoyageModel)
 	default:
 		return nil, fmt.Errorf("unsupported embedder: %s", cfg.Embedder)
 	}

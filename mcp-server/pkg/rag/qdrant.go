@@ -92,11 +92,16 @@ func (p *QdrantProvider) Index(ctx context.Context, projectID string, docs []Doc
 
 	points := make([]map[string]any, len(docs))
 	for i, d := range docs {
-		id := d.ID
-		if id == "" {
-			id = uuid.NewString()
+		// Qdrant only accepts an unsigned integer or a UUID as a point ID, but
+		// callers pass human-readable IDs like "path/to/file.go#chunk0". Map
+		// such IDs to a stable UUID (same input -> same UUID) so upserts keep
+		// overwriting the same point, and preserve the original under "doc_id".
+		rawID := d.ID
+		if rawID == "" {
+			rawID = uuid.NewString()
 		}
-		payload := map[string]any{"content": d.Content}
+		id := pointID(rawID)
+		payload := map[string]any{"content": d.Content, "doc_id": rawID}
 		for k, v := range d.Meta {
 			payload[k] = v
 		}
@@ -116,17 +121,35 @@ func (p *QdrantProvider) Index(ctx context.Context, projectID string, docs []Doc
 	return p.do(ctx, http.MethodPut, "/collections/"+name+"/points?wait=true", body, nil)
 }
 
+// QueryEmbedder is an optional interface for embedders that distinguish
+// query vs document inputs (e.g. Voyage AI input_type).
+type QueryEmbedder interface {
+	EmbedQuery(ctx context.Context, text string) ([]float32, error)
+}
+
 func (p *QdrantProvider) SemanticSearch(ctx context.Context, projectID, query string, limit int) ([]Result, error) {
 	if limit <= 0 {
 		limit = 5
 	}
-	vectors, err := p.embedder.Embed(ctx, []string{query})
-	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+
+	// Use EmbedQuery if available (Voyage AI distinguishes query vs document)
+	var queryVec []float32
+	if qe, ok := p.embedder.(QueryEmbedder); ok {
+		v, err := qe.EmbedQuery(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		queryVec = v
+	} else {
+		vectors, err := p.embedder.Embed(ctx, []string{query})
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		queryVec = vectors[0]
 	}
 
-	vec := make([]float64, len(vectors[0]))
-	for i, x := range vectors[0] {
+	vec := make([]float64, len(queryVec))
+	for i, x := range queryVec {
 		vec[i] = float64(x)
 	}
 
@@ -189,23 +212,44 @@ func (p *QdrantProvider) DeletePoints(ctx context.Context, projectID string, poi
 }
 
 func (p *QdrantProvider) ListPointIDs(ctx context.Context, projectID string, metaFilter map[string]string) ([]string, error) {
+	pts, err := p.ListPoints(ctx, projectID, metaFilter)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(pts))
+	for i, pt := range pts {
+		ids[i] = pt.ID
+	}
+	return ids, nil
+}
+
+// PointInfo is a Qdrant point's ID together with the payload fields needed to
+// reconcile it against the current file set.
+type PointInfo struct {
+	ID         string
+	SourceFile string
+}
+
+// ListPoints scrolls all points (optionally filtered by metadata), returning
+// each point's Qdrant ID and its source_file payload.
+func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error) {
 	name := p.collectionName(projectID)
 	must := []map[string]any{}
 	for k, v := range metaFilter {
 		must = append(must, map[string]any{
-			"key": k,
+			"key":   k,
 			"match": map[string]any{"value": v},
 		})
 	}
 
-	var allIDs []string
+	var all []PointInfo
 	offset := 0
 	limit := 256
 	for {
 		body := map[string]any{
-			"limit":  limit,
-			"offset": offset,
-			"with_payload": false,
+			"limit":        limit,
+			"offset":       offset,
+			"with_payload": []string{"source_file"},
 			"with_vector":  false,
 		}
 		if len(must) > 0 {
@@ -214,7 +258,10 @@ func (p *QdrantProvider) ListPointIDs(ctx context.Context, projectID string, met
 		var resp struct {
 			Result struct {
 				Points []struct {
-					ID any `json:"id"`
+					ID      any `json:"id"`
+					Payload struct {
+						SourceFile string `json:"source_file"`
+					} `json:"payload"`
 				} `json:"points"`
 				NextOffset any `json:"next_page_offset"`
 			} `json:"result"`
@@ -223,14 +270,28 @@ func (p *QdrantProvider) ListPointIDs(ctx context.Context, projectID string, met
 			return nil, fmt.Errorf("qdrant scroll: %w", err)
 		}
 		for _, pt := range resp.Result.Points {
-			allIDs = append(allIDs, fmt.Sprintf("%v", pt.ID))
+			all = append(all, PointInfo{
+				ID:         fmt.Sprintf("%v", pt.ID),
+				SourceFile: pt.Payload.SourceFile,
+			})
 		}
 		if resp.Result.NextOffset == nil {
 			break
 		}
 		offset = int(resp.Result.NextOffset.(float64))
 	}
-	return allIDs, nil
+	return all, nil
+}
+
+// pointID maps an arbitrary document ID to a value Qdrant accepts as a point
+// ID (a UUID). IDs that are already valid UUIDs are returned unchanged;
+// everything else is hashed into a deterministic UUIDv5 so the same document
+// ID always yields the same point ID.
+func pointID(raw string) string {
+	if _, err := uuid.Parse(raw); err == nil {
+		return raw
+	}
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(raw)).String()
 }
 
 func (p *QdrantProvider) Close() error { return nil }

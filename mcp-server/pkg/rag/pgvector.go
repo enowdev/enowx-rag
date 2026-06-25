@@ -187,6 +187,34 @@ func (p *PGVectorProvider) ListPointIDs(ctx context.Context, projectID string, m
 	return ids, rows.Err()
 }
 
+func (p *PGVectorProvider) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error) {
+	q := fmt.Sprintf("SELECT id, metadata->>'source_file' FROM %s WHERE project_id = $1", p.table)
+	args := []any{projectID}
+	if v, ok := metaFilter["source_file"]; ok {
+		q += " AND metadata->>'source_file' = $2"
+		args = append(args, v)
+	}
+	rows, err := p.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var points []PointInfo
+	for rows.Next() {
+		var id string
+		var sourceFile *string
+		if err := rows.Scan(&id, &sourceFile); err != nil {
+			return nil, err
+		}
+		pi := PointInfo{ID: id}
+		if sourceFile != nil {
+			pi.SourceFile = *sourceFile
+		}
+		points = append(points, pi)
+	}
+	return points, rows.Err()
+}
+
 func (p *PGVectorProvider) Close() error {
 	p.pool.Close()
 	return nil

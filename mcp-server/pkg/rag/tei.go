@@ -9,6 +9,12 @@ import (
 	"net/http"
 )
 
+// teiMaxBatch is the maximum number of inputs TEI accepts per /embed request.
+// TEI's default MAX_CLIENT_BATCH_SIZE is 32; larger requests are rejected with
+// HTTP 413. Embed transparently splits oversized input into sub-batches so
+// callers never have to care about this limit.
+const teiMaxBatch = 32
+
 // TEIEmbeddingClient talks to a Hugging Face Text Embeddings Inference server.
 type TEIEmbeddingClient struct {
 	BaseURL string
@@ -34,7 +40,30 @@ func NewTEIEmbeddingClient(baseURL string) *TEIEmbeddingClient {
 	}
 }
 
+// Embed returns one embedding per input text. Inputs larger than teiMaxBatch
+// are automatically split into multiple TEI requests and reassembled in order.
 func (c *TEIEmbeddingClient) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+	out := make([][]float32, 0, len(texts))
+	for i := 0; i < len(texts); i += teiMaxBatch {
+		end := i + teiMaxBatch
+		if end > len(texts) {
+			end = len(texts)
+		}
+		vecs, err := c.embedBatch(ctx, texts[i:end])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, vecs...)
+	}
+	return out, nil
+}
+
+// embedBatch sends a single /embed request. The caller must ensure len(texts)
+// does not exceed TEI's MAX_CLIENT_BATCH_SIZE.
+func (c *TEIEmbeddingClient) embedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}

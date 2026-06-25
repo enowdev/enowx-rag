@@ -180,6 +180,36 @@ func (p *ChromaProvider) ListPointIDs(ctx context.Context, projectID string, met
 	return ids, nil
 }
 
+func (p *ChromaProvider) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error) {
+	body := map[string]any{
+		"include": []string{"metadatas"},
+	}
+	if len(metaFilter) > 0 {
+		where := map[string]any{}
+		for k, v := range metaFilter {
+			where[k] = v
+		}
+		body["where"] = where
+	}
+	var resp chromaQueryResponse
+	if err := p.do(ctx, http.MethodPost, "/api/v1/collections/"+p.collectionName(projectID)+"/get", body, &resp); err != nil {
+		return nil, err
+	}
+	var points []PointInfo
+	for bi, batch := range resp.IDs {
+		for pi, id := range batch {
+			info := PointInfo{ID: id}
+			if bi < len(resp.Metadatas) && pi < len(resp.Metadatas[bi]) {
+				if sf, ok := resp.Metadatas[bi][pi]["source_file"].(string); ok {
+					info.SourceFile = sf
+				}
+			}
+			points = append(points, info)
+		}
+	}
+	return points, nil
+}
+
 func (p *ChromaProvider) Close() error { return nil }
 
 type chromaQueryResponse struct {
