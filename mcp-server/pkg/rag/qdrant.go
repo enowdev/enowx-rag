@@ -14,9 +14,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// QdrantProvider stores per-project vectors in Qdrant collections via REST API (no gRPC, no API key).
+// QdrantProvider stores per-project vectors in Qdrant collections via REST API (no gRPC).
+// Supports optional API key authentication for secured Qdrant instances.
 type QdrantProvider struct {
 	baseURL   string
+	apiKey    string
 	embedder  EmbeddingClient
 	vectorDim int
 	client    *http.Client
@@ -24,10 +26,12 @@ type QdrantProvider struct {
 
 // NewQdrantProvider connects to Qdrant via REST API.
 // baseURL should be the Qdrant REST endpoint, e.g. http://localhost:6333 or https://qdrant.example.com
-func NewQdrantProvider(ctx context.Context, baseURL string, embedder EmbeddingClient) (*QdrantProvider, error) {
+// apiKey is optional; set empty string for unsecured instances.
+func NewQdrantProvider(ctx context.Context, baseURL, apiKey string, embedder EmbeddingClient) (*QdrantProvider, error) {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	p := &QdrantProvider{
 		baseURL:   baseURL,
+		apiKey:    apiKey,
 		embedder:  embedder,
 		client:    &http.Client{},
 		vectorDim: embedder.VectorSize(),
@@ -311,6 +315,9 @@ func (p *QdrantProvider) do(ctx context.Context, method, path string, body any, 
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if p.apiKey != "" {
+		req.Header.Set("api-key", p.apiKey)
 	}
 	resp, err := p.client.Do(req)
 	if err != nil {
