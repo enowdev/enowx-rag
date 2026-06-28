@@ -203,8 +203,13 @@ func main() {
 		Name:        "rag_index_project",
 		Description: "Scan a project directory and auto-index all code/text files into RAG. Handles insertions (new/changed files) and deletions (removed files). Skips node_modules, .git, vendor, dist, build. Run this when the codebase changes.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in ScanProjectInput) (*mcp.CallToolResult, any, error) {
+		// Use a long-lived context so large projects don't time out under the
+		// MCP framework's short request deadline. 30 minutes is enough for
+		// even very large monorepos.
+		indexCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
 		idx := indexer.NewIndexer(provider, 1500)
-		result, err := idx.IndexProject(ctx, in.ProjectID, in.Directory)
+		result, err := idx.IndexProject(indexCtx, in.ProjectID, in.Directory)
 		if err != nil {
 			return nil, nil, err
 		}
