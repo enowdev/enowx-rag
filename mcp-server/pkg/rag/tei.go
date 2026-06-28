@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 // teiMaxBatch is the maximum number of inputs TEI accepts per /embed request.
@@ -36,7 +37,7 @@ type teiEmbedResponse struct {
 func NewTEIEmbeddingClient(baseURL string) *TEIEmbeddingClient {
 	return &TEIEmbeddingClient{
 		BaseURL: baseURL,
-		Client:  &http.Client{},
+		Client:  &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -149,7 +150,7 @@ func (c *TEIEmbeddingClient) embedSingle(ctx context.Context, text string) ([]fl
 
 // VectorSize returns the expected embedding dimension. TEI exposes it via /info.
 func (c *TEIEmbeddingClient) VectorSize() int {
-	ctx, cancel := context.WithTimeout(context.Background(), 5)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/info", nil)
 	if err != nil {

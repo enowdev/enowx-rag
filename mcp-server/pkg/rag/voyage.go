@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 const (
@@ -30,7 +31,7 @@ func NewVoyageEmbeddingClient(apiKey, model string) *VoyageEmbeddingClient {
 	return &VoyageEmbeddingClient{
 		APIKey: apiKey,
 		Model:  model,
-		client: &http.Client{},
+		client: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
