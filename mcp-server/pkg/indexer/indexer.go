@@ -55,6 +55,13 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 		return nil, err
 	}
 
+	// Use the directory base name as a source_dir tag so stale-point
+	// reconciliation is scoped per-directory. Without this, indexing a second
+	// directory into the same project would delete all points from the first
+	// directory because their source_file values don't appear in the second
+	// directory's file list.
+	sourceDir := filepath.Base(rootDir)
+
 	// Walk the directory and collect files.
 	var docs []rag.Document
 	var currentFiles []string
@@ -93,12 +100,13 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 
 		chunks := chunkText(string(content), idx.chunkSize)
 		for i, chunk := range chunks {
-			docID := fmt.Sprintf("%s#chunk%d", relPath, i)
+			docID := fmt.Sprintf("%s/%s#chunk%d", sourceDir, relPath, i)
 			docs = append(docs, rag.Document{
 				ID:      docID,
 				Content: fmt.Sprintf("File: %s\n\n%s", relPath, chunk),
 				Meta: map[string]string{
 					"source_file": relPath,
+					"source_dir":  sourceDir,
 					"chunk_index": fmt.Sprintf("%d", i),
 				},
 			})
@@ -124,8 +132,8 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 		}
 	}
 
-	// Find and delete stale points (files that no longer exist).
-	staleIDs, err := idx.findStalePoints(ctx, projectID, currentFiles)
+	// Find and delete stale points (files that no longer exist in THIS directory).
+	staleIDs, err := idx.findStalePoints(ctx, projectID, sourceDir, currentFiles)
 	if err != nil {
 		return &SyncResult{Indexed: len(docs), Deleted: 0, StaleError: err.Error()}, nil
 	}
@@ -150,16 +158,15 @@ type SyncResult struct {
 	StaleError   string `json:"stale_error,omitempty"`
 }
 
-func (idx *Indexer) findStalePoints(ctx context.Context, projectID string, currentFiles []string) ([]string, error) {
+func (idx *Indexer) findStalePoints(ctx context.Context, projectID, sourceDir string, currentFiles []string) ([]string, error) {
 	currentSet := make(map[string]bool, len(currentFiles))
 	for _, f := range currentFiles {
 		currentSet[f] = true
 	}
 
-	// List all points with their source_file payload. Point IDs are opaque
-	// UUIDs, so we reconcile against the current file set via the payload, not
-	// by parsing the ID.
-	points, err := idx.provider.ListPoints(ctx, projectID, nil)
+	// List only points belonging to this source_dir so that indexing a
+	// different directory into the same project doesn't wipe the first.
+	points, err := idx.provider.ListPoints(ctx, projectID, map[string]string{"source_dir": sourceDir})
 	if err != nil {
 		return nil, err
 	}
