@@ -247,14 +247,16 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 	}
 
 	var all []PointInfo
-	offset := 0
+	var scrollOffset any = nil
 	limit := 256
 	for {
 		body := map[string]any{
 			"limit":        limit,
-			"offset":       offset,
 			"with_payload": []string{"source_file"},
 			"with_vector":  false,
+		}
+		if scrollOffset != nil {
+			body["offset"] = scrollOffset
 		}
 		if len(must) > 0 {
 			body["filter"] = map[string]any{"must": must}
@@ -282,7 +284,7 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 		if resp.Result.NextOffset == nil {
 			break
 		}
-		offset = int(resp.Result.NextOffset.(float64))
+		scrollOffset = resp.Result.NextOffset
 	}
 	return all, nil
 }
