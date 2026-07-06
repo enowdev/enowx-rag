@@ -6,7 +6,14 @@ Per-project RAG memory MCP server. Each project gets its own vector collection, 
 
 ## Quick setup (copy-paste this to your AI agent)
 
-Copy the prompt below and paste it into Claude Code, Cline, Cursor, OpenCode, Codex, Factory Droid, Roo, Zed, Windsurf, or Continue:
+There are two setup paths. Pick the one that matches your situation:
+
+- **Option A — Full setup from scratch:** you don't have enowx-rag installed yet (clone, build, choose embedder, install the MCP server in your tools). Use this the first time.
+- **Option B — Onboard a new project:** the enowx-rag MCP server is already installed and running in your tools, and you just want to wire a *new* project into RAG memory (create its collection, add AGENTS.md/CLAUDE.md, install the skill). Use this for every project after the first.
+
+Copy the matching prompt below and paste it into Claude Code, Cline, Cursor, OpenCode, Codex, Factory Droid, Roo, Zed, Windsurf, or Continue.
+
+### Option A — Full setup from scratch
 
 ```
 I want to set up enowx-rag, a per-project RAG memory MCP server.
@@ -22,6 +29,24 @@ Then follow these steps:
 4. Install the MCP server in every coding tool I use. Use the correct config format per tool (the README has all formats from official docs).
 5. For the project I'm currently working in, create or merge AGENTS.md and CLAUDE.md with RAG memory instructions. Use project ID derived from the folder name. Call rag_create_project to create the collection.
 6. Do not replace existing AGENTS.md or CLAUDE.md. Append the RAG section with a --- separator.
+```
+
+### Option B — Onboard a new project (enowx-rag already installed)
+
+Use this when the enowx-rag MCP server is already installed and configured in your coding tool. It skips clone/build/backend and only wires the current project into RAG memory.
+
+```
+I already have the enowx-rag MCP server installed and running. I want to onboard THIS project into RAG memory.
+
+Read the skill at https://raw.githubusercontent.com/enowdev/enowx-rag/main/skill/enowx-rag.md for the AGENTS.md/CLAUDE.md templates.
+
+Then follow these steps:
+1. Confirm the enowx-rag MCP tools are available (e.g. rag_create_project, rag_retrieve_context). If they are NOT available, stop and tell me to run the full setup (Option A) first.
+2. Derive a PROJECT_ID from this project's folder name (or ask me).
+3. Call rag_create_project with that PROJECT_ID to create its collection (safe to call if it already exists).
+4. Create or merge AGENTS.md and CLAUDE.md in this project root using the skill's templates, with PROJECT_ID filled in. Do NOT replace existing files — append the RAG section below existing content, separated by a --- divider.
+5. Install the enowx-rag skill for this project. Prefer a project-local skill directory used by my tool (e.g. .agents/skills/enowx-rag/, .factory/skills/enowx-rag/, or the tool's skill folder) — do not assume ~/.factory. Ask me if you are unsure which directory my tool uses.
+6. Call rag_index_project on this project directory to seed the collection with the current files.
 ```
 
 ---
