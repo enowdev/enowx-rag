@@ -113,9 +113,19 @@ func (p *PGVectorProvider) SemanticSearch(ctx context.Context, projectID, query 
 	if limit <= 0 {
 		limit = 5
 	}
-	vectors, err := p.embedder.Embed(ctx, []string{query})
-	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+	var queryVec []float32
+	if qe, ok := p.embedder.(QueryEmbedder); ok {
+		v, err := qe.EmbedQuery(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		queryVec = v
+	} else {
+		vectors, err := p.embedder.Embed(ctx, []string{query})
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		queryVec = vectors[0]
 	}
 	q := fmt.Sprintf(`
 SELECT id, content, metadata, 1 - (embedding <=> $1::vector) AS score
@@ -124,7 +134,7 @@ WHERE project_id = $2
 ORDER BY embedding <=> $1::vector
 LIMIT $3
 `, p.table)
-	rows, err := p.pool.Query(ctx, q, pgVectorLiteral(vectors[0]), projectID, limit)
+	rows, err := p.pool.Query(ctx, q, pgVectorLiteral(queryVec), projectID, limit)
 	if err != nil {
 		return nil, err
 	}

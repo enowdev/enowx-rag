@@ -95,12 +95,22 @@ func (p *ChromaProvider) SemanticSearch(ctx context.Context, projectID, query st
 	if limit <= 0 {
 		limit = 5
 	}
-	vectors, err := p.embedder.Embed(ctx, []string{query})
-	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+	var queryVec []float32
+	if qe, ok := p.embedder.(QueryEmbedder); ok {
+		v, err := qe.EmbedQuery(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		queryVec = v
+	} else {
+		vectors, err := p.embedder.Embed(ctx, []string{query})
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		queryVec = vectors[0]
 	}
-	embedding := make([]float64, len(vectors[0]))
-	for i, v := range vectors[0] {
+	embedding := make([]float64, len(queryVec))
+	for i, v := range queryVec {
 		embedding[i] = float64(v)
 	}
 

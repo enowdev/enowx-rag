@@ -125,12 +125,6 @@ func (p *QdrantProvider) Index(ctx context.Context, projectID string, docs []Doc
 	return p.do(ctx, http.MethodPut, "/collections/"+name+"/points?wait=true", body, nil)
 }
 
-// QueryEmbedder is an optional interface for embedders that distinguish
-// query vs document inputs (e.g. Voyage AI input_type).
-type QueryEmbedder interface {
-	EmbedQuery(ctx context.Context, text string) ([]float32, error)
-}
-
 func (p *QdrantProvider) SemanticSearch(ctx context.Context, projectID, query string, limit int) ([]Result, error) {
 	if limit <= 0 {
 		limit = 5
