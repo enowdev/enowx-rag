@@ -50,6 +50,13 @@ func (p *ChromaProvider) Index(ctx context.Context, projectID string, docs []Doc
 	}
 	name := p.collectionName(projectID)
 
+	// Determine embed_model and embed_dim for metadata injection.
+	embedModel := "unknown"
+	if mn, ok := p.embedder.(ModelNamer); ok {
+		embedModel = mn.ModelName()
+	}
+	embedDim := p.embedder.VectorSize()
+
 	texts := make([]string, len(docs))
 	ids := make([]string, len(docs))
 	metas := make([]map[string]any, len(docs))
@@ -59,7 +66,7 @@ func (p *ChromaProvider) Index(ctx context.Context, projectID string, docs []Doc
 		if ids[i] == "" {
 			ids[i] = strings.ReplaceAll(fmt.Sprintf("%x", d.Content), "/", "_") // fallback deterministic
 		}
-		metas[i] = map[string]any{"content": d.Content}
+		metas[i] = map[string]any{"content": d.Content, "embed_model": embedModel, "embed_dim": embedDim}
 		for k, v := range d.Meta {
 			metas[i][k] = v
 		}
@@ -212,6 +219,12 @@ func (p *ChromaProvider) ListPoints(ctx context.Context, projectID string, metaF
 			if bi < len(resp.Metadatas) && pi < len(resp.Metadatas[bi]) {
 				if sf, ok := resp.Metadatas[bi][pi]["source_file"].(string); ok {
 					info.SourceFile = sf
+				}
+				if ch, ok := resp.Metadatas[bi][pi]["content_hash"].(string); ok {
+					info.ContentHash = ch
+				}
+				if di, ok := resp.Metadatas[bi][pi]["doc_id"].(string); ok {
+					info.DocID = di
 				}
 			}
 			points = append(points, info)

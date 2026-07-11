@@ -138,6 +138,11 @@ func (c *VoyageEmbeddingClient) embedBatch(ctx context.Context, texts []string, 
 	return vecs, nil
 }
 
+// ModelName returns the configured model name. Implements ModelNamer.
+func (c *VoyageEmbeddingClient) ModelName() string {
+	return c.Model
+}
+
 // VectorSize returns the configured dimension, defaulting to 1024 when Dim is 0.
 func (c *VoyageEmbeddingClient) VectorSize() int {
 	if c.Dim > 0 {

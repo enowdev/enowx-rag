@@ -94,6 +94,13 @@ func (p *QdrantProvider) Index(ctx context.Context, projectID string, docs []Doc
 		return fmt.Errorf("embedding count mismatch: got %d, want %d", len(vectors), len(docs))
 	}
 
+	// Determine embed_model and embed_dim for metadata injection.
+	embedModel := "unknown"
+	if mn, ok := p.embedder.(ModelNamer); ok {
+		embedModel = mn.ModelName()
+	}
+	embedDim := p.vectorDim
+
 	points := make([]map[string]any, len(docs))
 	for i, d := range docs {
 		// Qdrant only accepts an unsigned integer or a UUID as a point ID, but
@@ -105,7 +112,12 @@ func (p *QdrantProvider) Index(ctx context.Context, projectID string, docs []Doc
 			rawID = uuid.NewString()
 		}
 		id := pointID(rawID)
-		payload := map[string]any{"content": d.Content, "doc_id": rawID}
+		payload := map[string]any{
+			"content":     d.Content,
+			"doc_id":      rawID,
+			"embed_model": embedModel,
+			"embed_dim":   embedDim,
+		}
 		for k, v := range d.Meta {
 			payload[k] = v
 		}
@@ -115,9 +127,9 @@ func (p *QdrantProvider) Index(ctx context.Context, projectID string, docs []Doc
 			vec[j] = float64(x)
 		}
 		points[i] = map[string]any{
-			"id":       id,
-			"vector":   vec,
-			"payload":  payload,
+			"id":      id,
+			"vector":  vec,
+			"payload": payload,
 		}
 	}
 
@@ -221,15 +233,8 @@ func (p *QdrantProvider) ListPointIDs(ctx context.Context, projectID string, met
 	return ids, nil
 }
 
-// PointInfo is a Qdrant point's ID together with the payload fields needed to
-// reconcile it against the current file set.
-type PointInfo struct {
-	ID         string
-	SourceFile string
-}
-
 // ListPoints scrolls all points (optionally filtered by metadata), returning
-// each point's Qdrant ID and its source_file payload.
+// each point's Qdrant ID and its source_file, content_hash, and doc_id payload.
 func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error) {
 	name := p.collectionName(projectID)
 	must := []map[string]any{}
@@ -246,7 +251,7 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 	for {
 		body := map[string]any{
 			"limit":        limit,
-			"with_payload": []string{"source_file"},
+			"with_payload": []string{"source_file", "content_hash", "doc_id"},
 			"with_vector":  false,
 		}
 		if scrollOffset != nil {
@@ -260,7 +265,9 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 				Points []struct {
 					ID      any `json:"id"`
 					Payload struct {
-						SourceFile string `json:"source_file"`
+						SourceFile  string `json:"source_file"`
+						ContentHash string `json:"content_hash"`
+						DocID       string `json:"doc_id"`
 					} `json:"payload"`
 				} `json:"points"`
 				NextOffset any `json:"next_page_offset"`
@@ -271,8 +278,10 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 		}
 		for _, pt := range resp.Result.Points {
 			all = append(all, PointInfo{
-				ID:         fmt.Sprintf("%v", pt.ID),
-				SourceFile: pt.Payload.SourceFile,
+				ID:          fmt.Sprintf("%v", pt.ID),
+				SourceFile:  pt.Payload.SourceFile,
+				ContentHash: pt.Payload.ContentHash,
+				DocID:       pt.Payload.DocID,
 			})
 		}
 		if resp.Result.NextOffset == nil {

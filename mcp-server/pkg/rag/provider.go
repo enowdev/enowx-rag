@@ -63,3 +63,19 @@ type EmbeddingClient interface {
 type QueryEmbedder interface {
 	EmbedQuery(ctx context.Context, text string) ([]float32, error)
 }
+
+// ModelNamer is an optional interface for embedders that expose their model
+// name. Providers use this in Index() to inject embed_model into document
+// metadata before persisting.
+type ModelNamer interface {
+	ModelName() string
+}
+
+// PointInfo is a stored point's ID together with the payload fields needed to
+// reconcile it against the current file set during incremental sync.
+type PointInfo struct {
+	ID          string
+	SourceFile  string
+	ContentHash string // content_hash from metadata, used for skip-if-unchanged
+	DocID       string // original document ID (Qdrant stores UUID, doc_id preserves the original)
+}

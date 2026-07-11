@@ -86,13 +86,23 @@ func (p *PGVectorProvider) Index(ctx context.Context, projectID string, docs []D
 		return fmt.Errorf("embedding count mismatch")
 	}
 
+	// Determine embed_model and embed_dim for metadata injection.
+	embedModel := "unknown"
+	if mn, ok := p.embedder.(ModelNamer); ok {
+		embedModel = mn.ModelName()
+	}
+	embedDim := p.dim
+
 	batch := &pgx.Batch{}
 	for i, d := range docs {
 		id := d.ID
 		if id == "" {
 			id = uuid.NewString()
 		}
-		meta := map[string]string{}
+		meta := map[string]string{
+			"embed_model": embedModel,
+			"embed_dim":   fmt.Sprintf("%d", embedDim),
+		}
 		for k, v := range d.Meta {
 			meta[k] = v
 		}
@@ -198,7 +208,7 @@ func (p *PGVectorProvider) ListPointIDs(ctx context.Context, projectID string, m
 }
 
 func (p *PGVectorProvider) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error) {
-	q := fmt.Sprintf("SELECT id, metadata->>'source_file' FROM %s WHERE project_id = $1", p.table)
+	q := fmt.Sprintf("SELECT id::text, metadata->>'source_file', metadata->>'content_hash', metadata->>'doc_id' FROM %s WHERE project_id = $1", p.table)
 	args := []any{projectID}
 	if v, ok := metaFilter["source_file"]; ok {
 		q += " AND metadata->>'source_file' = $2"
@@ -213,12 +223,20 @@ func (p *PGVectorProvider) ListPoints(ctx context.Context, projectID string, met
 	for rows.Next() {
 		var id string
 		var sourceFile *string
-		if err := rows.Scan(&id, &sourceFile); err != nil {
+		var contentHash *string
+		var docID *string
+		if err := rows.Scan(&id, &sourceFile, &contentHash, &docID); err != nil {
 			return nil, err
 		}
 		pi := PointInfo{ID: id}
 		if sourceFile != nil {
 			pi.SourceFile = *sourceFile
+		}
+		if contentHash != nil {
+			pi.ContentHash = *contentHash
+		}
+		if docID != nil {
+			pi.DocID = *docID
 		}
 		points = append(points, pi)
 	}
