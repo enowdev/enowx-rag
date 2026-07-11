@@ -1,11 +1,13 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { Topbar } from './components/Topbar'
 import { Overview } from './pages/Overview'
 import { Playground } from './pages/Playground'
 import { Chunks } from './pages/Chunks'
 import { Setup } from './pages/Setup'
+import { Wizard } from './pages/onboarding/Wizard'
 import { useTheme } from './lib/useTheme'
+import { api } from './lib/api'
 
 export type Page = 'overview' | 'playground' | 'chunks' | 'setup'
 
@@ -14,11 +16,37 @@ export interface ProjectInfo {
   chunkCount: number
 }
 
+type AppState = 'checking' | 'wizard' | 'dashboard'
+
 function App() {
   const { theme, toggleTheme } = useTheme()
+  const [appState, setAppState] = useState<AppState>('checking')
   const [page, setPage] = useState<Page>('overview')
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [activeProject, setActiveProject] = useState<string>('')
+
+  // First-run detection: check if config exists on load.
+  // If no config, show wizard. If config exists, show dashboard.
+  useEffect(() => {
+    let cancelled = false
+    api.setupStatus()
+      .then((status) => {
+        if (cancelled) return
+        setAppState(status.configured ? 'dashboard' : 'wizard')
+      })
+      .catch(() => {
+        if (cancelled) return
+        // If we can't reach the API, default to dashboard
+        // (the server might not have setup endpoints, or it's a dev issue)
+        setAppState('dashboard')
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const handleWizardComplete = useCallback(() => {
+    setAppState('dashboard')
+    setPage('overview')
+  }, [])
 
   const handleSelectProject = useCallback((id: string) => {
     setActiveProject(id)
@@ -35,6 +63,21 @@ function App() {
       setActiveProject(projs[0].projectID)
     }
   }, [activeProject])
+
+  // Show wizard on first run (no config)
+  if (appState === 'wizard') {
+    return <Wizard onComplete={handleWizardComplete} theme={theme} onToggleTheme={toggleTheme} />
+  }
+
+  // Loading state
+  if (appState === 'checking') {
+    return (
+      <div className="app-loading">
+        <div className="brand-mark mono">e</div>
+        <span>Loading…</span>
+      </div>
+    )
+  }
 
   return (
     <div className="app">

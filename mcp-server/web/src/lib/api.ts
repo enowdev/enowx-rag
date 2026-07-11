@@ -70,17 +70,14 @@ export interface SetupTestResponse {
 export interface SetupApplyRequest {
   vector_store: string
   embedder: string
-  voyage?: {
-    api_key: string
-    model: string
-    dim: number
-  }
+  voyage_api_key?: string
+  voyage_model?: string
+  voyage_dim?: number
   pgvector_dsn?: string
   qdrant_url?: string
   qdrant_api_key?: string
   chroma_url?: string
   tei_url?: string
-  reranker_model?: string
 }
 
 const API_BASE = '/api'
