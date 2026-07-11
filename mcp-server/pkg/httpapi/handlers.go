@@ -207,6 +207,16 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check that the project exists before executing the search. A
+	// non-existent project in pgvector silently returns 0 rows (no error),
+	// which would produce a misleading HTTP 200 with empty results. We
+	// verify existence via ListProjectIDs or ListPoints so we can return a
+	// proper 404.
+	if !h.svc.ProjectExists(r.Context(), req.ProjectID) {
+		writeErr(w, http.StatusNotFound, "project not found")
+		return
+	}
+
 	results, err := h.svc.Search(r.Context(), req.ProjectID, req.Query, core.SearchOpts{
 		K:      req.K,
 		Recall: req.Recall,
@@ -214,9 +224,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		Rerank: req.Rerank,
 	})
 	if err != nil {
-		// If the provider returned an error, it likely means the project
-		// doesn't exist or is inaccessible. Return 404.
-		writeErr(w, http.StatusNotFound, err.Error())
+		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 

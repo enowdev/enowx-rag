@@ -329,6 +329,34 @@ func (s *Service) ListPoints(ctx context.Context, projectID string, metaFilter m
 	return s.provider.ListPoints(ctx, projectID, metaFilter)
 }
 
+// ProjectExists checks whether a project with the given ID has any indexed
+// data. It first tries the ProjectLister interface (if the provider supports
+// it) for an O(1) set lookup; otherwise it falls back to ListPoints which
+// works for all providers. Returns false if the project does not exist or
+// an error occurs during the check.
+func (s *Service) ProjectExists(ctx context.Context, projectID string) bool {
+	// Fast path: if the provider can list project IDs, check membership.
+	if lister, ok := s.provider.(ProjectLister); ok {
+		ids, err := lister.ListProjectIDs(ctx)
+		if err != nil {
+			return false
+		}
+		for _, id := range ids {
+			if id == projectID {
+				return true
+			}
+		}
+		return false
+	}
+	// Fallback: query ListPoints for the project. If it returns nil or an
+	// error, the project doesn't exist.
+	points, err := s.provider.ListPoints(ctx, projectID, nil)
+	if err != nil {
+		return false
+	}
+	return points != nil
+}
+
 // DeletePoints removes specific points by ID from the project collection.
 func (s *Service) DeletePoints(ctx context.Context, projectID string, pointIDs []string) error {
 	if err := s.provider.DeletePoints(ctx, projectID, pointIDs); err != nil {

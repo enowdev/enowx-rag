@@ -338,6 +338,7 @@ func TestDeleteProject(t *testing.T) {
 // TestSearch_Success verifies POST /api/search returns results with scores.
 func TestSearch_Success(t *testing.T) {
 	p := &mockProvider{
+		projects: []string{"proj1"},
 		searchResults: []rag.Result{
 			{ID: "r1", Content: "hello world", Score: 0.95, Meta: map[string]string{"source_file": "f1.go"}},
 		},
@@ -407,10 +408,12 @@ func TestSearch_MissingFields(t *testing.T) {
 }
 
 // TestSearch_BadProject verifies POST /api/search returns 404 for a
-// non-existent project (when the provider returns an error).
+// non-existent project. The mock provider's ListProjectIDs returns an
+// empty list, so ProjectExists returns false and the handler returns 404
+// before even calling Search.
 func TestSearch_BadProject(t *testing.T) {
 	p := &mockProvider{
-		searchErr: errors.New("project not found"),
+		projects: []string{}, // no projects exist
 	}
 	_, router := newTestServer(t, p, nil)
 
@@ -433,10 +436,60 @@ func TestSearch_BadProject(t *testing.T) {
 	}
 }
 
+// TestSearch_BadProject_NoLister verifies that the 404 check works even
+// when the provider does not implement ProjectLister (falls back to
+// ListPoints returning nil).
+func TestSearch_BadProject_NoLister(t *testing.T) {
+	p := &mockProviderNoLister{
+		points: nil, // no points → project doesn't exist
+	}
+	svc := core.NewService(p, nil, nil)
+	router := NewRouter(svc, nil)
+
+	body := `{"project_id": "nonexistent", "query": "hello"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/search", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for non-existent project (no lister), got %d", w.Code)
+	}
+
+	var errResp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("failed to unmarshal error: %v", err)
+	}
+	if errResp["error"] == "" {
+		t.Error("expected error field in JSON response")
+	}
+}
+
+// TestSearch_ExistingProject_SearchError verifies that when a project
+// exists but the search itself fails, a 500 is returned (not 404).
+func TestSearch_ExistingProject_SearchError(t *testing.T) {
+	p := &mockProvider{
+		projects:  []string{"proj1"},
+		searchErr: errors.New("internal search failure"),
+	}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"project_id": "proj1", "query": "hello"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/search", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 for search error on existing project, got %d", w.Code)
+	}
+}
+
 // TestSearch_WithOpts verifies that k, recall, hybrid, rerank params are
 // accepted and don't cause errors.
 func TestSearch_WithOpts(t *testing.T) {
 	p := &mockProvider{
+		projects: []string{"proj1"},
 		searchResults: []rag.Result{
 			{ID: "r1", Content: "result 1", Score: 0.9},
 			{ID: "r2", Content: "result 2", Score: 0.8},
@@ -660,7 +713,9 @@ func TestSSEHeaders(t *testing.T) {
 // TestSSE_PublishesEvents verifies that events are published on the SSE
 // stream when an action occurs.
 func TestSSE_PublishesEvents(t *testing.T) {
-	p := &mockProvider{}
+	p := &mockProvider{
+		projects: []string{"proj1"},
+	}
 	svc, router := newTestServer(t, p, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -703,6 +758,44 @@ func TestSSE_PublishesEvents(t *testing.T) {
 	// This is a weaker check, but the stronger check is the body content.
 	_ = svc // ensure svc is used
 }
+
+// --- mockProviderNoLister: a provider that does NOT implement ProjectLister ---
+
+type mockProviderNoLister struct {
+	points        []rag.PointInfo
+	searchResults []rag.Result
+	searchErr     error
+}
+
+func (m *mockProviderNoLister) CreateCollection(ctx context.Context, projectID string) error {
+	return nil
+}
+func (m *mockProviderNoLister) DeleteCollection(ctx context.Context, projectID string) error { return nil }
+func (m *mockProviderNoLister) Index(ctx context.Context, projectID string, docs []rag.Document) error {
+	return nil
+}
+func (m *mockProviderNoLister) SemanticSearch(ctx context.Context, projectID, query string, limit int) ([]rag.Result, error) {
+	if m.searchErr != nil {
+		return nil, m.searchErr
+	}
+	return m.searchResults, nil
+}
+func (m *mockProviderNoLister) Embed(ctx context.Context, text string) ([]float32, error) {
+	return []float32{0.1, 0.2, 0.3}, nil
+}
+func (m *mockProviderNoLister) DeletePoints(ctx context.Context, projectID string, pointIDs []string) error {
+	return nil
+}
+func (m *mockProviderNoLister) ListPointIDs(ctx context.Context, projectID string, metaFilter map[string]string) ([]string, error) {
+	return nil, nil
+}
+func (m *mockProviderNoLister) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]rag.PointInfo, error) {
+	return m.points, nil
+}
+func (m *mockProviderNoLister) Close() error { return nil }
+
+// Compile-time assertion
+var _ rag.Provider = (*mockProviderNoLister)(nil)
 
 // --- Test helper: in-memory fs.FS ---
 
