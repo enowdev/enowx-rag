@@ -45,9 +45,11 @@ func NewPGVectorProvider(ctx context.Context, dsn string, embedder EmbeddingClie
 }
 
 func (p *PGVectorProvider) ensureTable(ctx context.Context) error {
+	// The id column is TEXT (not UUID) because the indexer generates string
+	// IDs like "dir/file.go#chunk0". A UUID column would reject these IDs.
 	query := fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS %s (
-	id UUID PRIMARY KEY,
+	id TEXT PRIMARY KEY,
 	project_id TEXT NOT NULL,
 	content TEXT NOT NULL,
 	metadata JSONB,
@@ -285,7 +287,7 @@ func (p *PGVectorProvider) ListPointIDs(ctx context.Context, projectID string, m
 }
 
 func (p *PGVectorProvider) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error) {
-	q := fmt.Sprintf("SELECT id::text, metadata->>'source_file', metadata->>'content_hash', metadata->>'chunk_version', metadata->>'doc_id' FROM %s WHERE project_id = $1", p.table)
+	q := fmt.Sprintf("SELECT id, metadata->>'source_file', metadata->>'content_hash', metadata->>'chunk_version', metadata->>'doc_id' FROM %s WHERE project_id = $1", p.table)
 	args := []any{projectID}
 	if v, ok := metaFilter["source_file"]; ok {
 		q += " AND metadata->>'source_file' = $2"

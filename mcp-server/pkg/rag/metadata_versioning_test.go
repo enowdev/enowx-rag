@@ -225,7 +225,7 @@ func TestPGVectorIndexInjectsEmbedMetadata(t *testing.T) {
 	// Query the stored metadata directly
 	var meta map[string]string
 	err = p.pool.QueryRow(context.Background(),
-		fmt.Sprintf("SELECT metadata FROM %s WHERE project_id = $1 AND id = $2::uuid", "project_memory_test"),
+		fmt.Sprintf("SELECT metadata FROM %s WHERE project_id = $1 AND id = $2", "project_memory_test"),
 		projectID, docs[0].ID,
 	).Scan(&meta)
 	if err != nil {

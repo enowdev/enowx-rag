@@ -240,6 +240,110 @@ func TestPGVectorSemanticSearchDefaultLimit(t *testing.T) {
 	}
 }
 
+// TestPGVectorStringID verifies that the pgvector table accepts string IDs
+// like the ones the indexer generates (e.g. "dir/file.go#chunk0") and that
+// all CRUD operations (Index, ListPointIDs, ListPoints, DeletePoints, SemanticSearch)
+// work correctly with TEXT primary key.
+func TestPGVectorStringID(t *testing.T) {
+	skipIfNoPostgres(t)
+
+	embedder := &mockQueryEmbedder{
+		queryResult: []float32{0.1, 0.2, 0.3},
+	}
+
+	p, err := NewPGVectorProvider(context.Background(), pgvectorDSN, embedder, "project_memory_test")
+	if err != nil {
+		t.Fatalf("NewPGVectorProvider: %v", err)
+	}
+	defer p.Close()
+
+	projectID := "test_string_id"
+	cleanupTestTable(t, projectID)
+	defer cleanupTestTable(t, projectID)
+
+	// Use string IDs like the indexer generates
+	stringID := "enowx-rag/pkg/rag/pgvector.go#chunk0"
+	docs := []Document{
+		{ID: stringID, Content: "hello world from string id test", Meta: map[string]string{"source_file": "pgvector.go"}},
+	}
+	if err := p.Index(context.Background(), projectID, docs); err != nil {
+		t.Fatalf("Index with string ID: %v", err)
+	}
+
+	// Verify ListPointIDs returns the string ID
+	ids, err := p.ListPointIDs(context.Background(), projectID, nil)
+	if err != nil {
+		t.Fatalf("ListPointIDs: %v", err)
+	}
+	if len(ids) != 1 {
+		t.Fatalf("expected 1 point ID, got %d", len(ids))
+	}
+	if ids[0] != stringID {
+		t.Errorf("expected id %q, got %q", stringID, ids[0])
+	}
+
+	// Verify ListPoints returns the string ID
+	points, err := p.ListPoints(context.Background(), projectID, nil)
+	if err != nil {
+		t.Fatalf("ListPoints: %v", err)
+	}
+	if len(points) != 1 {
+		t.Fatalf("expected 1 point, got %d", len(points))
+	}
+	if points[0].ID != stringID {
+		t.Errorf("expected point id %q, got %q", stringID, points[0].ID)
+	}
+
+	// Verify SemanticSearch works
+	results, err := p.SemanticSearch(context.Background(), projectID, "hello", 5)
+	if err != nil {
+		t.Fatalf("SemanticSearch: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].ID != stringID {
+		t.Errorf("expected result id %q, got %q", stringID, results[0].ID)
+	}
+
+	// Verify DeletePoints works with string ID
+	if err := p.DeletePoints(context.Background(), projectID, []string{stringID}); err != nil {
+		t.Fatalf("DeletePoints: %v", err)
+	}
+
+	// Verify the point is gone
+	ids, err = p.ListPointIDs(context.Background(), projectID, nil)
+	if err != nil {
+		t.Fatalf("ListPointIDs after delete: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("expected 0 point IDs after delete, got %d", len(ids))
+	}
+}
+
+// TestPGVectorTextPrimaryKeySchema verifies that the id column is TEXT, not UUID.
+func TestPGVectorTextPrimaryKeySchema(t *testing.T) {
+	skipIfNoPostgres(t)
+
+	p, err := NewPGVectorProvider(context.Background(), pgvectorDSN, &mockPlainEmbedder{vectorSize: 3}, "project_memory_test")
+	if err != nil {
+		t.Fatalf("NewPGVectorProvider: %v", err)
+	}
+	defer p.Close()
+
+	var dataType string
+	err = p.pool.QueryRow(context.Background(), `
+SELECT data_type FROM information_schema.columns
+WHERE table_name = 'project_memory_test' AND column_name = 'id'
+`).Scan(&dataType)
+	if err != nil {
+		t.Fatalf("query id column type: %v", err)
+	}
+	if dataType != "text" {
+		t.Errorf("expected id column data_type 'text', got %q", dataType)
+	}
+}
+
 // Ensure the test binary doesn't fail if env vars are missing.
 func init() {
 	// Set a dummy Voyage API key for any tests that create Voyage clients
