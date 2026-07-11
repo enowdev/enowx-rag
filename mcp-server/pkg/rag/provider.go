@@ -95,11 +95,15 @@ type Reranker interface {
 }
 
 // PointInfo is a stored point's ID together with the payload fields needed to
-// reconcile it against the current file set during incremental sync.
+// reconcile it against the current file set during incremental sync. Content
+// and ChunkIndex are populated by ListPoints when the UI needs to display
+// chunk previews (e.g. the Chunks page).
 type PointInfo struct {
 	ID           string `json:"id"`
 	SourceFile   string `json:"source_file,omitempty"`
 	ContentHash  string `json:"content_hash,omitempty"`
 	ChunkVersion string `json:"chunk_version,omitempty"`
 	DocID        string `json:"doc_id,omitempty"` // original document ID (Qdrant stores UUID, doc_id preserves the original)
+	Content      string `json:"content,omitempty"`
+	ChunkIndex   string `json:"chunk_index,omitempty"`
 }

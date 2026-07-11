@@ -11,6 +11,8 @@ export interface PointInfo {
   content_hash?: string
   chunk_version?: string
   doc_id?: string
+  content?: string
+  chunk_index?: string
 }
 
 export interface SearchResult {
@@ -111,6 +113,12 @@ export const api = {
     const q = qs.toString()
     return fetchJSON<PointInfo[]>(`${API_BASE}/projects/${encodeURIComponent(id)}/points${q ? '?' + q : ''}`)
   },
+
+  deletePoint: (id: string, pointId: string) =>
+    fetchJSON<{ status: string; project_id: string; point_id: string }>(
+      `${API_BASE}/projects/${encodeURIComponent(id)}/points/${encodeURIComponent(pointId)}`,
+      { method: 'DELETE' },
+    ),
 
   reindex: (id: string, directory: string) =>
     fetchJSON<ReindexResponse>(`${API_BASE}/projects/${encodeURIComponent(id)}/reindex`, {

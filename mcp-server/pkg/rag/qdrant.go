@@ -251,7 +251,7 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 	for {
 		body := map[string]any{
 			"limit":        limit,
-			"with_payload": []string{"source_file", "content_hash", "doc_id"},
+			"with_payload": true,
 			"with_vector":  false,
 		}
 		if scrollOffset != nil {
@@ -264,11 +264,7 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 			Result struct {
 				Points []struct {
 					ID      any `json:"id"`
-					Payload struct {
-						SourceFile  string `json:"source_file"`
-						ContentHash string `json:"content_hash"`
-						DocID       string `json:"doc_id"`
-					} `json:"payload"`
+					Payload map[string]any `json:"payload"`
 				} `json:"points"`
 				NextOffset any `json:"next_page_offset"`
 			} `json:"result"`
@@ -277,12 +273,29 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 			return nil, fmt.Errorf("qdrant scroll: %w", err)
 		}
 		for _, pt := range resp.Result.Points {
-			all = append(all, PointInfo{
-				ID:          fmt.Sprintf("%v", pt.ID),
-				SourceFile:  pt.Payload.SourceFile,
-				ContentHash: pt.Payload.ContentHash,
-				DocID:       pt.Payload.DocID,
-			})
+			pi := PointInfo{
+				ID: fmt.Sprintf("%v", pt.ID),
+			}
+			if v, ok := pt.Payload["source_file"].(string); ok {
+				pi.SourceFile = v
+			}
+			if v, ok := pt.Payload["content_hash"].(string); ok {
+				pi.ContentHash = v
+			}
+			if v, ok := pt.Payload["doc_id"].(string); ok {
+				pi.DocID = v
+			}
+			if v, ok := pt.Payload["content"].(string); ok {
+				if len(v) > 200 {
+					pi.Content = v[:200]
+				} else {
+					pi.Content = v
+				}
+			}
+			if v, ok := pt.Payload["chunk_index"].(string); ok {
+				pi.ChunkIndex = v
+			}
+			all = append(all, pi)
 		}
 		if resp.Result.NextOffset == nil {
 			break

@@ -199,7 +199,7 @@ func (p *ChromaProvider) ListPointIDs(ctx context.Context, projectID string, met
 
 func (p *ChromaProvider) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error) {
 	body := map[string]any{
-		"include": []string{"metadatas"},
+		"include": []string{"metadatas", "documents"},
 	}
 	if len(metaFilter) > 0 {
 		where := map[string]any{}
@@ -225,6 +225,17 @@ func (p *ChromaProvider) ListPoints(ctx context.Context, projectID string, metaF
 				}
 				if di, ok := resp.Metadatas[bi][pi]["doc_id"].(string); ok {
 					info.DocID = di
+				}
+				if ci, ok := resp.Metadatas[bi][pi]["chunk_index"].(string); ok {
+					info.ChunkIndex = ci
+				}
+			}
+			if bi < len(resp.Documents) && pi < len(resp.Documents[bi]) {
+				content := resp.Documents[bi][pi]
+				if len(content) > 200 {
+					info.Content = content[:200]
+				} else {
+					info.Content = content
 				}
 			}
 			points = append(points, info)

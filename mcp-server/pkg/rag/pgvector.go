@@ -333,12 +333,13 @@ func (p *PGVectorProvider) ListPointIDs(ctx context.Context, projectID string, m
 }
 
 func (p *PGVectorProvider) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error) {
-	q := fmt.Sprintf("SELECT id, metadata->>'source_file', metadata->>'content_hash', metadata->>'chunk_version', metadata->>'doc_id' FROM %s WHERE project_id = $1", p.table)
+	q := fmt.Sprintf("SELECT id, metadata->>'source_file', metadata->>'content_hash', metadata->>'chunk_version', metadata->>'doc_id', LEFT(content, 200), metadata->>'chunk_index' FROM %s WHERE project_id = $1", p.table)
 	args := []any{projectID}
 	if v, ok := metaFilter["source_file"]; ok {
 		q += " AND metadata->>'source_file' = $2"
 		args = append(args, v)
 	}
+	q += " ORDER BY metadata->>'source_file', metadata->>'chunk_index'"
 	rows, err := p.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -351,7 +352,9 @@ func (p *PGVectorProvider) ListPoints(ctx context.Context, projectID string, met
 		var contentHash *string
 		var chunkVersion *string
 		var docID *string
-		if err := rows.Scan(&id, &sourceFile, &contentHash, &chunkVersion, &docID); err != nil {
+		var contentPreview *string
+		var chunkIndex *string
+		if err := rows.Scan(&id, &sourceFile, &contentHash, &chunkVersion, &docID, &contentPreview, &chunkIndex); err != nil {
 			return nil, err
 		}
 		pi := PointInfo{ID: id}
@@ -366,6 +369,12 @@ func (p *PGVectorProvider) ListPoints(ctx context.Context, projectID string, met
 		}
 		if docID != nil {
 			pi.DocID = *docID
+		}
+		if contentPreview != nil {
+			pi.Content = *contentPreview
+		}
+		if chunkIndex != nil {
+			pi.ChunkIndex = *chunkIndex
 		}
 		points = append(points, pi)
 	}

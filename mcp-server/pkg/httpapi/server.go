@@ -28,6 +28,7 @@ func NewRouter(svc *core.Service, ui fs.FS) http.Handler {
 		r.Get("/projects", h.ListProjects)
 		r.Get("/projects/{id}", h.GetProject)
 		r.Get("/projects/{id}/points", h.ListPoints)
+		r.Delete("/projects/{id}/points/{pointId}", h.DeletePoint)
 		r.Post("/projects/{id}/reindex", h.ReindexProject)
 		r.Delete("/projects/{id}", h.DeleteProject)
 		r.Post("/search", h.Search)

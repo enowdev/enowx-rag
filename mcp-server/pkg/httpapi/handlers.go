@@ -134,6 +134,27 @@ func (h *Handlers) ListPoints(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, points)
 }
 
+// DeletePoint handles DELETE /api/projects/{id}/points/{pointId}.
+// Deletes a single chunk from the project collection.
+func (h *Handlers) DeletePoint(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+	if projectID == "" {
+		writeErr(w, http.StatusBadRequest, "project id is required")
+		return
+	}
+	pointID := chi.URLParam(r, "pointId")
+	if pointID == "" {
+		writeErr(w, http.StatusBadRequest, "point id is required")
+		return
+	}
+
+	if err := h.svc.DeletePoints(r.Context(), projectID, []string{pointID}); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "project_id": projectID, "point_id": pointID})
+}
+
 // ReindexProject handles POST /api/projects/{id}/reindex.
 // Triggers re-index and returns sync statistics.
 // Expects a JSON body with "directory" field.

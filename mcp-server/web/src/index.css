@@ -935,3 +935,103 @@
     grid-column: auto;
   }
 }
+
+/* ===== Chunk list ===== */
+.chunk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chunk-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--bg);
+  transition: border-color 0.1s;
+}
+
+.chunk-row:hover {
+  border-color: var(--border-strong);
+}
+
+.chunk-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chunk-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.chunk-header .fname {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chunk-idx {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex: none;
+}
+
+.chunk-preview {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+.chunk-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chunk-meta .tag {
+  font-size: 10px;
+}
+
+.chunk-delete {
+  color: var(--text-faint);
+  border-color: var(--border);
+}
+
+.chunk-delete:hover:not(:disabled) {
+  color: var(--crit);
+  border-color: var(--crit);
+}
+
+.chunk-delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ===== Pagination ===== */
+.pagination {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  justify-content: center;
+  align-items: center;
+}
+
+.pagination .page-info {
+  color: var(--text-faint);
+  font-size: 12px;
+}
