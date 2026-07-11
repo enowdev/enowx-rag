@@ -72,7 +72,7 @@ func buildProvider(ctx context.Context, cfg Config) (rag.Provider, error) {
 		if cfg.VoyageAPIKey == "" {
 			return nil, fmt.Errorf("RAG_VOYAGE_API_KEY is required for voyage embedder")
 		}
-		embedder = rag.NewVoyageEmbeddingClient(cfg.VoyageAPIKey, cfg.VoyageModel)
+		embedder = rag.NewVoyageEmbeddingClient(cfg.VoyageAPIKey, cfg.VoyageModel, cfg.VectorDim)
 	default:
 		return nil, fmt.Errorf("unsupported embedder: %s", cfg.Embedder)
 	}

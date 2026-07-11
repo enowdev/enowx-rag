@@ -17,28 +17,36 @@ const (
 
 // VoyageEmbeddingClient calls the Voyage AI embeddings API.
 type VoyageEmbeddingClient struct {
-	APIKey string
-	Model  string
-	client *http.Client
+	APIKey  string
+	Model   string
+	Dim     int // 0 = default 1024
+	client  *http.Client
+	baseURL string // override for testing; defaults to voyageAPIURL
 }
 
 // NewVoyageEmbeddingClient creates a Voyage AI embedding client.
 // model defaults to "voyage-4" if empty.
-func NewVoyageEmbeddingClient(apiKey, model string) *VoyageEmbeddingClient {
+// dim sets the output dimension (Matryoshka). 0 defaults to 1024.
+func NewVoyageEmbeddingClient(apiKey, model string, dim int) *VoyageEmbeddingClient {
 	if model == "" {
 		model = "voyage-4"
+	}
+	if dim == 0 {
+		dim = 1024
 	}
 	return &VoyageEmbeddingClient{
 		APIKey: apiKey,
 		Model:  model,
+		Dim:    dim,
 		client: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
 type voyageRequest struct {
-	Input     []string `json:"input"`
-	Model     string   `json:"model"`
-	InputType string   `json:"input_type,omitempty"`
+	Input           []string `json:"input"`
+	Model           string   `json:"model"`
+	InputType       string   `json:"input_type,omitempty"`
+	OutputDimension int      `json:"output_dimension,omitempty"`
 }
 
 type voyageResponse struct {
@@ -87,12 +95,18 @@ func (c *VoyageEmbeddingClient) embedWithType(ctx context.Context, texts []strin
 
 func (c *VoyageEmbeddingClient) embedBatch(ctx context.Context, texts []string, inputType string) ([][]float32, error) {
 	body, _ := json.Marshal(voyageRequest{
-		Input:     texts,
-		Model:     c.Model,
-		InputType: inputType,
+		Input:           texts,
+		Model:           c.Model,
+		InputType:       inputType,
+		OutputDimension: c.Dim,
 	})
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, voyageAPIURL, bytes.NewReader(body))
+	url := c.baseURL
+	if url == "" {
+		url = voyageAPIURL
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +138,10 @@ func (c *VoyageEmbeddingClient) embedBatch(ctx context.Context, texts []string, 
 	return vecs, nil
 }
 
-// VectorSize returns 1024 (voyage-4 default dimension).
+// VectorSize returns the configured dimension, defaulting to 1024 when Dim is 0.
 func (c *VoyageEmbeddingClient) VectorSize() int {
+	if c.Dim > 0 {
+		return c.Dim
+	}
 	return 1024
 }
