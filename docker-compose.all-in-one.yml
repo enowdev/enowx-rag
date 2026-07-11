@@ -1,0 +1,115 @@
+# docker-compose.all-in-one.yml
+# All-in-one deployment: enowx-rag server (API + UI) with optional backend services.
+#
+# Usage:
+#   docker compose -f docker-compose.all-in-one.yml up -d
+#
+# The enowx-rag container serves both the REST API and the embedded React SPA
+# on port 7777. Backend services (Qdrant + TEI or PostgreSQL) start
+# automatically.
+#
+# To enable optional admin token auth, set RAG_ADMIN_TOKEN in the environment
+# or uncomment the line below. When set, all /api/* endpoints require an
+# Authorization: Bearer <token> header.
+#
+# Environment variables can be customized in the enowx-rag service section below.
+
+services:
+  # --- enowx-rag server (API + embedded UI) ---
+  enowx-rag:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: enowx-rag
+    ports:
+      - "7777:7777"
+    environment:
+      # --- Vector store: choose one ---
+      RAG_VECTOR_STORE: "qdrant"
+      # RAG_VECTOR_STORE: "pgvector"
+
+      # --- Embedder: voyage (recommended) or tei ---
+      RAG_EMBEDDER: "voyage"
+      RAG_VOYAGE_API_KEY: "${RAG_VOYAGE_API_KEY:-}"
+      RAG_VOYAGE_MODEL: "voyage-4"
+      RAG_RERANKER_MODEL: "rerank-2.5"
+
+      # --- Qdrant config (when RAG_VECTOR_STORE=qdrant) ---
+      RAG_QDRANT_URL: "http://qdrant:6333"
+
+      # --- pgvector config (when RAG_VECTOR_STORE=pgvector) ---
+      # RAG_PGVECTOR_DSN: "postgresql://enowxrag:enowxrag@postgres:5432/enowxrag"
+
+      # --- TEI config (when RAG_EMBEDDER=tei) ---
+      # RAG_TEI_URL: "http://tei-embedding:80"
+
+      # --- Optional admin token auth (uncomment to enable) ---
+      # RAG_ADMIN_TOKEN: "change-me-to-a-random-string"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["./enowx-rag", "--serve", "--addr", ":7777"]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7777/api/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --- Qdrant vector store ---
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: enowx-rag-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --- Optional: PostgreSQL with pgvector (uncomment to use) ---
+  # postgres:
+  #   image: pgvector/pgvector:pg16
+  #   container_name: enowx-rag-postgres
+  #   ports:
+  #     - "5432:5432"
+  #   environment:
+  #     POSTGRES_USER: enowxrag
+  #     POSTGRES_PASSWORD: enowxrag
+  #     POSTGRES_DB: enowxrag
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U enowxrag"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
+  # --- Optional: TEI embedder (uncomment when RAG_EMBEDDER=tei) ---
+  # tei-embedding:
+  #   image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.7
+  #   container_name: enowx-rag-tei
+  #   ports:
+  #     - "8081:80"
+  #   environment:
+  #     MODEL_ID: BAAI/bge-small-en-v1.5
+  #     RUST_LOG: info
+  #     MAX_BATCH_TOKENS: "16384"
+  #   volumes:
+  #     - tei-data:/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
+volumes:
+  qdrant-data:
+  # postgres-data:
+  # tei-data:

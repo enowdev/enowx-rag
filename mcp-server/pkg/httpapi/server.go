@@ -23,8 +23,12 @@ func NewRouter(svc *core.Service, ui fs.FS) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 
-	// API routes
+	// API routes — protected by optional admin token middleware.
+	// When RAG_ADMIN_TOKEN is set, all /api/* endpoints require an
+	// Authorization: Bearer <token> header. When unset, no auth is required.
 	r.Route("/api", func(r chi.Router) {
+		r.Use(AdminTokenMiddleware)
+
 		r.Get("/projects", h.ListProjects)
 		r.Get("/projects/{id}", h.GetProject)
 		r.Get("/projects/{id}/points", h.ListPoints)

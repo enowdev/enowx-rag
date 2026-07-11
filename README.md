@@ -2,9 +2,145 @@
 
 Per-project RAG memory MCP server. Each project gets its own vector collection, so an LLM can index context about a codebase and retrieve it quickly.
 
+The server runs in **two modes** from a single binary:
+
+- **MCP stdio mode** (default): `enowx-rag` — talks to AI coding tools over stdio via the Model Context Protocol.
+- **HTTP serve mode**: `enowx-rag --serve` — starts an HTTP server with a REST API, SSE event stream, and an embedded React dashboard UI (playground, chunks browser, onboarding wizard).
+
 ---
 
-## Quick setup (copy-paste this to your AI agent)
+## Quick Start (one-command deploy)
+
+### From source
+
+```bash
+git clone https://github.com/enowdev/enowx-rag.git
+cd enowx-rag
+make build && ./enowx-rag --serve
+```
+
+This builds the React SPA, compiles the Go binary (with the SPA embedded), and starts the HTTP server on port 7777. Open `http://localhost:7777` in your browser.
+
+Set your embedding provider before starting:
+
+```bash
+export RAG_VOYAGE_API_KEY=your-voyage-api-key
+make build && ./enowx-rag --serve
+```
+
+### With Docker (all-in-one)
+
+```bash
+export RAG_VOYAGE_API_KEY=your-voyage-api-key
+docker compose -f docker-compose.all-in-one.yml up -d
+```
+
+The enowx-rag container serves both the API and UI on port 7777. Qdrant starts automatically as the vector store. See [Docker all-in-one](#docker-all-in-one) below for details.
+
+---
+
+## Two modes of operation
+
+### MCP stdio mode (default)
+
+Run without `--serve` to use the MCP stdio transport. This is the mode you configure in your AI coding tool (Claude Code, Cursor, Cline, etc.):
+
+```bash
+./enowx-rag
+```
+
+All six MCP tools are available: `rag_create_project`, `rag_delete_project`, `rag_index`, `rag_index_project`, `rag_semantic_search`, `rag_retrieve_context`. Logs go to stderr (stdout is the MCP protocol stream).
+
+### HTTP serve mode
+
+Run with `--serve` to start the HTTP API + embedded UI:
+
+```bash
+# Default port 7777
+./enowx-rag --serve
+
+# Custom port
+./enowx-rag --serve --addr :8080
+
+# With admin token auth (protects /api/* endpoints)
+RAG_ADMIN_TOKEN=your-secret ./enowx-rag --serve
+```
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--serve` | `false` | Run as HTTP server instead of stdio MCP |
+| `--addr` | `:7777` | HTTP listen address (only used with `--serve`) |
+
+---
+
+## REST API endpoints
+
+When running in `--serve` mode, the following REST endpoints are available:
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/projects` | List all projects with chunk counts |
+| `GET` | `/api/projects/{id}` | Get project detail (404 if not found) |
+| `GET` | `/api/projects/{id}/points` | List chunks (supports `?source_file=`, `?offset=`, `?limit=`) |
+| `DELETE` | `/api/projects/{id}/points/{pointId}` | Delete a single chunk |
+| `POST` | `/api/projects/{id}/reindex` | Re-index a project directory (body: `{"directory": "/path"}`) |
+| `DELETE` | `/api/projects/{id}` | Delete a project collection |
+| `POST` | `/api/search` | Search (body: `{"project_id", "query", "k", "recall", "hybrid", "rerank"}`) |
+| `GET` | `/api/stats` | Aggregate stats (total projects, chunks, embed model) |
+| `GET` | `/api/events` | SSE stream of realtime events (index, search, etc.) |
+| `POST` | `/api/setup/test` | Test vector store + embedder connectivity |
+| `POST` | `/api/setup/apply` | Save config to `~/.enowx-rag/config.yaml` |
+| `GET` | `/api/setup/status` | Check if config exists |
+
+Non-API routes serve the embedded React SPA (client-side routing for `/playground`, `/chunks`, `/setup`, etc.).
+
+Example:
+
+```bash
+curl http://localhost:7777/api/projects
+curl -X POST http://localhost:7777/api/search \
+  -H 'Content-Type: application/json' \
+  -d '{"project_id": "my-project", "query": "how does auth work", "k": 5, "hybrid": true, "rerank": true}'
+```
+
+---
+
+## Optional admin token auth
+
+When the `RAG_ADMIN_TOKEN` environment variable is set, all `/api/*` endpoints require an `Authorization: Bearer <token>` header. The SPA and static assets are always served without auth.
+
+```bash
+# Enable auth
+export RAG_ADMIN_TOKEN=my-secret-token
+./enowx-rag --serve
+
+# API requests must include the token
+curl -H "Authorization: Bearer my-secret-token" http://localhost:7777/api/projects
+```
+
+When `RAG_ADMIN_TOKEN` is **not set**, no authentication is required (default behavior). This makes it easy to run locally without auth and enable it only when exposing the server to the internet.
+
+---
+
+## Docker all-in-one
+
+The `docker-compose.all-in-one.yml` file at the repository root starts the enowx-rag server (API + UI) alongside Qdrant in a single command:
+
+```bash
+export RAG_VOYAGE_API_KEY=your-voyage-api-key
+docker compose -f docker-compose.all-in-one.yml up -d
+```
+
+- enowx-rag container serves API + SPA on port **7777**
+- Qdrant starts automatically on port 6333
+- PostgreSQL (pgvector) and TEI are available as commented-out services in the compose file
+- Set `RAG_ADMIN_TOKEN` in the compose environment to enable auth
+
+To use pgvector instead of Qdrant, uncomment the `postgres` service and switch `RAG_VECTOR_STORE` to `pgvector` in the compose file.
+
+---
+
+## Quick setup for AI agents (copy-paste this to your AI agent)
 
 There are two setup paths. Pick the one that matches your situation:
 
@@ -448,15 +584,24 @@ Each project has its own collection: `project_PROJECT_ID`. Do not mix project me
 
 ```
 enowx-rag/
-├── AGENTS.md           # Universal agent install guide (this repo)
-├── CLAUDE.md           # Claude-family quick reference (this repo)
-├── README.md           # This file
-├── mcp-server/         # Go MCP server (stdio transport)
-│   ├── cmd/mcp-server
-│   ├── pkg/rag         # Provider interface + Qdrant, Chroma, pgvector
-│   ├── Dockerfile
-│   └── docker-compose.yml
-└── skill/              # Factory Droid skill
+├── AGENTS.md                          # Universal agent install guide (this repo)
+├── CLAUDE.md                          # Claude-family quick reference (this repo)
+├── README.md                          # This file
+├── Makefile                           # Build pipeline: make web, make build, make dev-*
+├── docker-compose.all-in-one.yml      # All-in-one: enowx-rag + Qdrant (optional PG, TEI)
+├── mcp-server/                        # Go server (MCP stdio + HTTP serve modes)
+│   ├── cmd/mcp-server/main.go         # Entry point: --serve / --addr flags
+│   ├── pkg/rag                        # Provider interface + Qdrant, Chroma, pgvector, Voyage, TEI
+│   ├── pkg/core                       # Service layer (shared by MCP + HTTP)
+│   ├── pkg/config                     # Config file (~/.enowx-rag/config.yaml)
+│   ├── pkg/httpapi                    # Chi router, REST handlers, SSE, admin auth
+│   ├── pkg/indexer                    # File indexer with content hashing
+│   ├── web/                           # React SPA (Vite + React + TypeScript + Tailwind)
+│   │   ├── dist/                      # Build output (embedded via go:embed)
+│   │   └── embed.go                   # //go:embed all:dist
+│   ├── Dockerfile                     # Multi-stage: builds SPA + Go binary
+│   └── docker-compose.yml             # Backend-only compose (Qdrant + TEI)
+└── skill/                             # Factory Droid skill
     ├── enowx-rag.md
     └── templates/
         └── AGENTS.md
@@ -469,7 +614,9 @@ enowx-rag/
 | Qdrant | TEI (self-hosted) | Ready |
 | Qdrant | Voyage AI | Ready |
 | Chroma | TEI (self-hosted) | Ready |
+| Chroma | Voyage AI | Ready |
 | pgvector | TEI (self-hosted) | Ready |
+| pgvector | Voyage AI | Ready (recommended for hybrid search) |
 
 ## Embedding options
 
@@ -508,16 +655,22 @@ cd mcp-server && docker compose up -d qdrant tei-embedding
 
 ## Environment variables
 
+All configuration is via environment variables (or config file at `~/.enowx-rag/config.yaml`). Priority: **env var > config file > default**.
+
 | Variable | Default | Description |
 | --- | --- | --- |
-| `RAG_VECTOR_STORE` | `qdrant` | `qdrant`, `chroma`, `pgvector` |
-| `RAG_EMBEDDER` | `voyage` | `voyage`, `tei` (falls back to `tei` if `RAG_VOYAGE_API_KEY` is not set) |
+| `RAG_VECTOR_STORE` | `qdrant` | Vector store: `qdrant`, `chroma`, or `pgvector` |
+| `RAG_EMBEDDER` | `voyage` | Embedding provider: `voyage` or `tei` (auto-detects: falls back to `tei` if `RAG_VOYAGE_API_KEY` is not set) |
 | `RAG_QDRANT_URL` | `http://localhost:6333` | Qdrant REST URL |
+| `RAG_QDRANT_API_KEY` | *(empty)* | Optional Qdrant API key (for Qdrant Cloud) |
 | `RAG_CHROMA_URL` | `http://localhost:8000` | Chroma REST URL |
-| `RAG_PGVECTOR_DSN` | - | Postgres connection string |
-| `RAG_TEI_URL` | `http://localhost:8081` | Text Embeddings Inference URL |
-| `RAG_VOYAGE_API_KEY` | - | Voyage AI API key (required when `RAG_EMBEDDER=voyage`) |
-| `RAG_VOYAGE_MODEL` | `voyage-4` | Voyage AI model name |
+| `RAG_PGVECTOR_DSN` | *(empty)* | PostgreSQL connection string (e.g., `postgresql://user@localhost:5432/dbname`). Required when `RAG_VECTOR_STORE=pgvector` |
+| `RAG_TEI_URL` | `http://localhost:8081` | Text Embeddings Inference URL. Used when `RAG_EMBEDDER=tei` |
+| `RAG_VOYAGE_API_KEY` | *(empty)* | Voyage AI API key (required when `RAG_EMBEDDER=voyage`). Get a free key at [voyageai.com](https://voyageai.com) (200M free tokens with voyage-4) |
+| `RAG_VOYAGE_MODEL` | `voyage-4` | Voyage AI embedding model name |
+| `RAG_VECTOR_DIM` | `1024` | Embedding vector dimension (matches voyage-4 default). Override only if using a different model with a different dimension |
+| `RAG_RERANKER_MODEL` | *(empty)* | Reranker model name (e.g., `rerank-2.5`). When set and `RAG_VOYAGE_API_KEY` is available, reranking is enabled for search |
+| `RAG_ADMIN_TOKEN` | *(empty)* | Optional admin token. When set, all `/api/*` endpoints require `Authorization: Bearer <token>` header. When unset, no auth is required |
 
 ## Tools
 
@@ -530,7 +683,11 @@ cd mcp-server && docker compose up -d qdrant tei-embedding
 
 ## Notes
 
-- The MCP server uses stdio transport by default.
+- The server has two modes: **MCP stdio** (default, no flags) and **HTTP serve** (`--serve`). Both use the same core service layer.
+- In stdio mode, logs go to stderr (stdout is the MCP protocol stream).
+- In serve mode, the HTTP server provides a REST API, SSE event stream, and an embedded React dashboard UI.
+- `make build` produces a single self-contained binary with the SPA embedded via `embed.FS`.
 - Each project gets its own collection/index: `project_<project_id>`.
-- The existing Coolify `robloxkit-rag` stack exposes Qdrant on `localhost:6333` and TEI on `localhost:8081` when Docker/Colima is running.
+- Config priority: environment variable > config file (`~/.enowx-rag/config.yaml`) > built-in defaults.
+- Optional admin token auth (`RAG_ADMIN_TOKEN`) protects `/api/*` endpoints when set. No auth when unset.
 
