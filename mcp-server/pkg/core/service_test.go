@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -706,5 +708,47 @@ func TestDeleteProjectErrorPropagated(t *testing.T) {
 	err := svc.DeleteProject(context.Background(), "proj1")
 	if err == nil {
 		t.Fatal("expected error from DeleteCollection")
+	}
+}
+
+// TestIndexProject verifies that Service.IndexProject delegates to the indexer
+// and returns a SyncResult with Indexed > 0 and FilesScanned > 0 when given a
+// temporary directory containing at least one indexable file.
+//
+// This satisfies VAL-FND-015: core.Service.IndexProject delegates to indexer.
+func TestIndexProject(t *testing.T) {
+	// Create a temporary directory with a test file
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "hello.go")
+	testContent := "package main\n\nfunc main() {\n    println(\"hello world\")\n}\n"
+	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	p := &mockProvider{}
+	svc := NewService(p, nil, nil)
+
+	result, err := svc.IndexProject(context.Background(), "test-proj", tmpDir)
+	if err != nil {
+		t.Fatalf("IndexProject returned error: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("IndexProject returned nil result")
+	}
+
+	if result.Indexed <= 0 {
+		t.Errorf("expected Indexed > 0, got %d", result.Indexed)
+	}
+
+	if result.FilesScanned <= 0 {
+		t.Errorf("expected FilesScanned > 0, got %d", result.FilesScanned)
+	}
+
+	// Verify provider.Index was called (indexer delegates to provider)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.indexCalls == 0 {
+		t.Error("expected provider.Index to be called at least once")
 	}
 }
