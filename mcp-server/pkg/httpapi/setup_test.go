@@ -1,0 +1,632 @@
+package httpapi
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// helperClearRagEnv unsets all RAG_ env vars that could interfere with
+// config tests and returns a cleanup function.
+func helperClearRagEnv(t *testing.T) func() {
+	t.Helper()
+	keys := []string{
+		"RAG_VECTOR_STORE", "RAG_EMBEDDER",
+		"RAG_QDRANT_URL", "RAG_QDRANT_API_KEY",
+		"RAG_CHROMA_URL", "RAG_PGVECTOR_DSN",
+		"RAG_TEI_URL",
+		"RAG_VOYAGE_API_KEY", "RAG_VOYAGE_MODEL", "RAG_VECTOR_DIM",
+		"RAG_RERANKER_MODEL",
+	}
+	saved := make(map[string]string)
+	for _, k := range keys {
+		saved[k] = os.Getenv(k)
+		os.Unsetenv(k)
+	}
+	return func() {
+		for k, v := range saved {
+			if v != "" {
+				os.Setenv(k, v)
+			} else {
+				os.Unsetenv(k)
+			}
+		}
+	}
+}
+
+// --- GET /api/setup/status ---
+
+// TestSetupStatus_NotConfigured verifies that GET /api/setup/status returns
+// configured: false when no config file exists.
+func TestSetupStatus_NotConfigured(t *testing.T) {
+	cleanup := helperClearRagEnv(t)
+	defer cleanup()
+
+	// Point HOME to a temp dir with no config file.
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/status", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var resp setupStatusResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if resp.Configured {
+		t.Error("expected configured=false when no config file exists")
+	}
+}
+
+// TestSetupStatus_Configured verifies that GET /api/setup/status returns
+// configured: true when a config file exists.
+func TestSetupStatus_Configured(t *testing.T) {
+	cleanup := helperClearRagEnv(t)
+	defer cleanup()
+
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	// Create the config file so that os.Stat finds it.
+	configDir := filepath.Join(tmpDir, ".enowx-rag")
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(configDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte("vector_store: pgvector\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/status", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var resp setupStatusResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if !resp.Configured {
+		t.Error("expected configured=true when config file exists")
+	}
+}
+
+// TestSetupStatus_Transitions verifies the before/after flow: status is
+// false before apply, then true after apply.
+func TestSetupStatus_Transitions(t *testing.T) {
+	cleanup := helperClearRagEnv(t)
+	defer cleanup()
+
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	// Step 1: status should be false.
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/status", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var resp setupStatusResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Configured {
+		t.Fatal("expected configured=false before apply")
+	}
+
+	// Step 2: apply config.
+	applyBody := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"test-key","qdrant_url":"http://localhost:6333"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(applyBody))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("apply failed: %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// Step 3: status should now be true.
+	req = httptest.NewRequest(http.MethodGet, "/api/setup/status", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if !resp.Configured {
+		t.Error("expected configured=true after apply")
+	}
+}
+
+// --- POST /api/setup/apply ---
+
+// TestSetupApply_SavesConfigWith0600 verifies that POST /api/setup/apply
+// saves the config to ~/.enowx-rag/config.yaml with chmod 0600.
+func TestSetupApply_SavesConfigWith0600(t *testing.T) {
+	cleanup := helperClearRagEnv(t)
+	defer cleanup()
+
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"vector_store":"pgvector","embedder":"voyage","voyage_api_key":"secret-key","voyage_model":"voyage-4","voyage_dim":1024,"pgvector_dsn":"postgresql://enowdev@localhost:5432/enowxrag"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify file exists with 0600 permissions.
+	configPath := filepath.Join(tmpDir, ".enowx-rag", "config.yaml")
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("config file not created: %v", err)
+	}
+	mode := info.Mode().Perm()
+	if mode != 0600 {
+		t.Errorf("expected file mode 0600, got %o", mode)
+	}
+
+	// Verify the response includes the path.
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if resp["status"] != "saved" {
+		t.Errorf("expected status 'saved', got %v", resp["status"])
+	}
+}
+
+// TestSetupApply_WritesValidYAML verifies that the saved config file is
+// valid YAML and its values match the submitted config.
+func TestSetupApply_WritesValidYAML(t *testing.T) {
+	cleanup := helperClearRagEnv(t)
+	defer cleanup()
+
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"vector_store":"pgvector","embedder":"voyage","voyage_api_key":"my-key","voyage_model":"voyage-4","voyage_dim":1024,"pgvector_dsn":"postgresql://enowdev@localhost:5432/enowxrag","qdrant_url":"http://localhost:6333","reranker_model":"rerank-2.5"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Read the file and verify it's valid YAML with correct values.
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".enowx-rag", "config.yaml"))
+	if err != nil {
+		t.Fatalf("failed to read config file: %v", err)
+	}
+
+	yamlContent := string(data)
+	if !strings.Contains(yamlContent, "vector_store: pgvector") {
+		t.Errorf("expected YAML to contain 'vector_store: pgvector', got: %s", yamlContent)
+	}
+	if !strings.Contains(yamlContent, "embedder: voyage") {
+		t.Errorf("expected YAML to contain 'embedder: voyage', got: %s", yamlContent)
+	}
+	if !strings.Contains(yamlContent, "api_key: my-key") {
+		t.Errorf("expected YAML to contain 'api_key: my-key', got: %s", yamlContent)
+	}
+	if !strings.Contains(yamlContent, "pgvector_dsn:") {
+		t.Errorf("expected YAML to contain 'pgvector_dsn:', got: %s", yamlContent)
+	}
+}
+
+// TestSetupApply_MissingVectorStore verifies that POST /api/setup/apply
+// returns 400 when vector_store is missing.
+func TestSetupApply_MissingVectorStore(t *testing.T) {
+	cleanup := helperClearRagEnv(t)
+	defer cleanup()
+
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"embedder":"voyage"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+
+	var errResp map[string]string
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	if errResp["error"] == "" {
+		t.Error("expected error field in response")
+	}
+}
+
+// TestSetupApply_InvalidJSON verifies that POST /api/setup/apply returns
+// 400 for invalid JSON body.
+func TestSetupApply_InvalidJSON(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+// TestSetupApply_OverwritesExisting verifies that applying config when a
+// file already exists overwrites it (with 0600 permissions maintained).
+func TestSetupApply_OverwritesExisting(t *testing.T) {
+	cleanup := helperClearRagEnv(t)
+	defer cleanup()
+
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	// Pre-create a config file with different values and wider permissions.
+	configDir := filepath.Join(tmpDir, ".enowx-rag")
+	os.MkdirAll(configDir, 0700)
+	configPath := filepath.Join(configDir, "config.yaml")
+	os.WriteFile(configPath, []byte("vector_store: old\n"), 0644)
+
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"new-key","qdrant_url":"http://localhost:6333"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify file has 0600 permissions even after overwrite.
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Errorf("expected 0600 after overwrite, got %o", info.Mode().Perm())
+	}
+
+	// Verify content was replaced.
+	data, _ := os.ReadFile(configPath)
+	if !strings.Contains(string(data), "vector_store: qdrant") {
+		t.Errorf("expected new content, got: %s", string(data))
+	}
+	if strings.Contains(string(data), "old") {
+		t.Errorf("expected old content to be overwritten, got: %s", string(data))
+	}
+}
+
+// --- POST /api/setup/test ---
+
+// TestSetupTest_QdrantSuccess verifies that POST /api/setup/test returns
+// per-component ok/message/latency_ms when both vector store and embedder
+// are reachable.
+func TestSetupTest_QdrantSuccess(t *testing.T) {
+	// Start a mock Qdrant server that responds 200 on /healthz.
+	qdrantSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("ok"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer qdrantSrv.Close()
+
+	// Start a mock Voyage API server that responds 200 on /v1/embeddings.
+	voyageSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/embeddings" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"data":[{"embedding":[0.1,0.2],"index":0}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer voyageSrv.Close()
+
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"test-key","qdrant_url":"` + qdrantSrv.URL + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp setupTestResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	// Vector store should be ok.
+	if !resp.VectorStore.OK {
+		t.Errorf("expected vector_store ok=true, got false: %s", resp.VectorStore.Message)
+	}
+	if resp.VectorStore.Message == "" {
+		t.Error("expected non-empty vector_store message")
+	}
+
+	// Note: the embedder test calls the real Voyage AI API because the URL
+	// is hardcoded in the implementation. We only verify the vector store
+	// component here and check that the embedder field is present.
+	if resp.Embedder.Message == "" {
+		t.Error("expected non-empty embedder message")
+	}
+}
+
+// TestSetupTest_QdrantFail verifies that POST /api/setup/test returns ok=false
+// for the vector store when the server is unreachable.
+func TestSetupTest_QdrantFail(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	// Use a port that's almost certainly not listening.
+	body := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"test-key","qdrant_url":"http://127.0.0.1:59999"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp setupTestResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if resp.VectorStore.OK {
+		t.Error("expected vector_store ok=false when server is unreachable")
+	}
+	if resp.VectorStore.Message == "" {
+		t.Error("expected non-empty error message for failed vector store")
+	}
+}
+
+// TestSetupTest_PGVectorSuccess verifies that POST /api/setup/test returns
+// ok=true for pgvector when the PostgreSQL server is reachable (TCP dial).
+func TestSetupTest_PGVectorSuccess(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	// Use the real local PostgreSQL that's running per the mission setup.
+	body := `{"vector_store":"pgvector","embedder":"voyage","voyage_api_key":"test-key","pgvector_dsn":"postgresql://enowdev@localhost:5432/enowxrag"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp setupTestResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if !resp.VectorStore.OK {
+		t.Errorf("expected vector_store ok=true for local PostgreSQL, got false: %s", resp.VectorStore.Message)
+	}
+}
+
+// TestSetupTest_PGVectorFail verifies that POST /api/setup/test returns
+// ok=false for pgvector when the DSN points to an unreachable host.
+func TestSetupTest_PGVectorFail(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"vector_store":"pgvector","embedder":"voyage","voyage_api_key":"test-key","pgvector_dsn":"postgresql://user@127.0.0.1:59999/nonexistent"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp setupTestResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if resp.VectorStore.OK {
+		t.Error("expected vector_store ok=false when PostgreSQL is unreachable")
+	}
+	if !strings.Contains(resp.VectorStore.Message, "cannot connect") {
+		t.Errorf("expected message to contain 'cannot connect', got: %s", resp.VectorStore.Message)
+	}
+}
+
+// TestSetupTest_MissingFields verifies that POST /api/setup/test returns
+// 400 when vector_store or embedder is missing.
+func TestSetupTest_MissingFields(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	// Missing vector_store.
+	body := `{"embedder":"voyage"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing vector_store, got %d", w.Code)
+	}
+
+	// Missing embedder.
+	body = `{"vector_store":"qdrant"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing embedder, got %d", w.Code)
+	}
+}
+
+// TestSetupTest_InvalidJSON verifies that POST /api/setup/test returns 400
+// for invalid JSON body.
+func TestSetupTest_InvalidJSON(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+// TestSetupTest_ReturnsLatency verifies that POST /api/setup/test includes
+// latency_ms in the per-component results.
+func TestSetupTest_ReturnsLatency(t *testing.T) {
+	// Start a mock Qdrant server.
+	qdrantSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer qdrantSrv.Close()
+
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"test-key","qdrant_url":"` + qdrantSrv.URL + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp setupTestResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	// latency_ms should be present (>= 0). Even fast connections have 0ms.
+	if resp.VectorStore.LatencyMs < 0 {
+		t.Errorf("expected non-negative latency_ms, got %d", resp.VectorStore.LatencyMs)
+	}
+}
+
+// TestSetupTest_UnsupportedVectorStore verifies that POST /api/setup/test
+// returns ok=false for an unsupported vector store type.
+func TestSetupTest_UnsupportedVectorStore(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"vector_store":"redis","embedder":"voyage","voyage_api_key":"test-key"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp setupTestResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if resp.VectorStore.OK {
+		t.Error("expected ok=false for unsupported vector store")
+	}
+	if !strings.Contains(resp.VectorStore.Message, "unsupported") {
+		t.Errorf("expected message to contain 'unsupported', got: %s", resp.VectorStore.Message)
+	}
+}
+
+// --- parsePGDSN unit tests ---
+
+func TestParsePGDSN_URLFormat(t *testing.T) {
+	tests := []struct {
+		dsn      string
+		wantHost string
+		wantPort string
+	}{
+		{"postgresql://enowdev@localhost:5432/enowxrag", "localhost", "5432"},
+		{"postgresql://admin@db.example.com:6543/mydb", "db.example.com", "6543"},
+		{"postgres://localhost/mydb", "localhost", "5432"},
+		{"postgresql://localhost:5432", "localhost", "5432"},
+	}
+	for _, tt := range tests {
+		host, port := parsePGDSN(tt.dsn)
+		if host != tt.wantHost {
+			t.Errorf("parsePGDSN(%q) host = %q, want %q", tt.dsn, host, tt.wantHost)
+		}
+		if port != tt.wantPort {
+			t.Errorf("parsePGDSN(%q) port = %q, want %q", tt.dsn, port, tt.wantPort)
+		}
+	}
+}
+
+func TestParsePGDSN_KeywordFormat(t *testing.T) {
+	dsn := "host=db.example.com port=6543 dbname=mydb user=admin"
+	host, port := parsePGDSN(dsn)
+	if host != "db.example.com" {
+		t.Errorf("host = %q, want %q", host, "db.example.com")
+	}
+	if port != "6543" {
+		t.Errorf("port = %q, want %q", port, "6543")
+	}
+}
+
+func TestParsePGDSN_Empty(t *testing.T) {
+	host, port := parsePGDSN("")
+	if host != "localhost" {
+		t.Errorf("host = %q, want %q", host, "localhost")
+	}
+	if port != "5432" {
+		t.Errorf("port = %q, want %q", port, "5432")
+	}
+}

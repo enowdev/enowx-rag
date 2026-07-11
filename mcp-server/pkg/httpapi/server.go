@@ -33,6 +33,12 @@ func NewRouter(svc *core.Service, ui fs.FS) http.Handler {
 		r.Post("/search", h.Search)
 		r.Get("/stats", h.Stats)
 		r.Get("/events", h.SSE)
+
+		// Setup wizard endpoints
+		r.Post("/setup/test", h.SetupTest)
+		r.Post("/setup/apply", h.SetupApply)
+		r.Get("/setup/status", h.SetupStatus)
+
 		// Unknown /api/ routes return 404 JSON (not SPA fallback)
 		r.NotFound(h.NotFound)
 	})
