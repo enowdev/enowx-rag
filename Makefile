@@ -60,4 +60,4 @@ placeholder:
 
 # clean: Remove build artifacts.
 clean:
-	rm -f $(MCP_DIR)/$(BINARY) $(BINARY)
+	rm -f $(MCP_DIR)/$(BINARY) $(BINARY) $(MCP_DIR)/mcp-server

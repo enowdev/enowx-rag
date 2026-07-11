@@ -49,9 +49,13 @@ services:
       qdrant:
         condition: service_healthy
     restart: unless-stopped
-    command: ["./enowx-rag", "--serve", "--addr", ":7777"]
+    # ENTRYPOINT in Dockerfile is ["./enowx-rag"], so command must NOT
+    # include the binary name — only the flags to pass to it.
+    command: ["--serve", "--addr", ":7777"]
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7777/api/stats"]
+      # When RAG_ADMIN_TOKEN is set, /api/* requires an Authorization header.
+      # Use a shell-form test so the header is sent only when the token is set.
+      test: ["CMD-SHELL", "wget --spider -q --header=\"$${RAG_ADMIN_TOKEN:+Authorization: Bearer $$RAG_ADMIN_TOKEN}\" http://localhost:7777/api/stats"]
       interval: 30s
       timeout: 10s
       retries: 3
