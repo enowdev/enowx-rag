@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/enowdev/enowx-rag/pkg/core"
 	"github.com/enowdev/enowx-rag/pkg/indexer"
 	"github.com/enowdev/enowx-rag/pkg/rag"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -89,6 +90,12 @@ func buildProvider(ctx context.Context, cfg Config) (rag.Provider, error) {
 	}
 }
 
+// buildService wraps a provider, optional reranker, and indexer into a
+// core.Service that both MCP and HTTP handlers call.
+func buildService(provider rag.Provider, reranker rag.Reranker, idx *indexer.Indexer) *core.Service {
+	return core.NewService(provider, reranker, idx)
+}
+
 // Tool inputs.
 type CreateProjectInput struct {
 	ProjectID string `json:"project_id" jsonschema:"Unique identifier for the project/collection"`
@@ -134,6 +141,11 @@ func main() {
 	}
 	defer provider.Close()
 
+	// Build the service layer that wraps provider + indexer.
+	// Reranker is nil for now; will be wired when rag-reranker feature is implemented.
+	idx := indexer.NewIndexer(provider, 1500)
+	svc := buildService(provider, nil, idx)
+
 	server := mcp.NewServer(&mcp.Implementation{Name: "enowx-rag", Version: "0.1.0"}, &mcp.ServerOptions{
 		Instructions: "Per-project RAG memory: create collections, index project documents, and retrieve/semantic-search context. Connects to Qdrant/Chroma/pgvector with TEI embeddings.",
 	})
@@ -142,7 +154,7 @@ func main() {
 		Name:        "rag_create_project",
 		Description: "Create a new RAG collection for a project. Safe to call if collection already exists.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in CreateProjectInput) (*mcp.CallToolResult, any, error) {
-		if err := provider.CreateCollection(ctx, in.ProjectID); err != nil {
+		if err := svc.CreateProject(ctx, in.ProjectID); err != nil {
 			return nil, nil, err
 		}
 		return nil, map[string]any{"status": "ok", "project_id": in.ProjectID}, nil
@@ -152,7 +164,7 @@ func main() {
 		Name:        "rag_delete_project",
 		Description: "Delete the RAG collection for a project and all its indexed memory.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in DeleteProjectInput) (*mcp.CallToolResult, any, error) {
-		if err := provider.DeleteCollection(ctx, in.ProjectID); err != nil {
+		if err := svc.DeleteProject(ctx, in.ProjectID); err != nil {
 			return nil, nil, err
 		}
 		return nil, map[string]any{"status": "deleted", "project_id": in.ProjectID}, nil
@@ -166,7 +178,7 @@ func main() {
 		for i, d := range in.Documents {
 			docs[i] = rag.Document{ID: d.ID, Content: d.Content, Meta: d.Meta}
 		}
-		if err := provider.Index(ctx, in.ProjectID, docs); err != nil {
+		if err := svc.IndexDocuments(ctx, in.ProjectID, docs); err != nil {
 			return nil, nil, err
 		}
 		return nil, map[string]any{"status": "indexed", "count": len(docs)}, nil
@@ -176,7 +188,7 @@ func main() {
 		Name:        "rag_semantic_search",
 		Description: "Semantic search over a project collection. Returns the most relevant chunks with similarity scores.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in SemanticSearchInput) (*mcp.CallToolResult, any, error) {
-		res, err := provider.SemanticSearch(ctx, in.ProjectID, in.Query, in.Limit)
+		res, err := svc.Search(ctx, in.ProjectID, in.Query, core.SearchOpts{K: in.Limit, Recall: in.Limit})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -187,16 +199,11 @@ func main() {
 		Name:        "rag_retrieve_context",
 		Description: "Retrieve a compact context string for a project. Fetches top chunks and concatenates them for LLM context.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in RetrieveContextInput) (*mcp.CallToolResult, any, error) {
-		res, err := provider.SemanticSearch(ctx, in.ProjectID, in.Query, in.Limit)
+		context, chunks, err := svc.RetrieveContext(ctx, in.ProjectID, in.Query, in.Limit)
 		if err != nil {
 			return nil, nil, err
 		}
-		parts := make([]string, 0, len(res))
-		for _, r := range res {
-			parts = append(parts, fmt.Sprintf("[score %.3f] %s", r.Score, r.Content))
-		}
-		context := strings.Join(parts, "\n\n")
-		return nil, map[string]any{"context": context, "chunks": res}, nil
+		return nil, map[string]any{"context": context, "chunks": chunks}, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -208,14 +215,13 @@ func main() {
 		// even very large monorepos.
 		indexCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		idx := indexer.NewIndexer(provider, 1500)
-		result, err := idx.IndexProject(indexCtx, in.ProjectID, in.Directory)
+		result, err := svc.IndexProject(indexCtx, in.ProjectID, in.Directory)
 		if err != nil {
 			return nil, nil, err
 		}
 		return nil, map[string]any{
-			"status":        "synced",
-			"project_id":    in.ProjectID,
+			"status":         "synced",
+			"project_id":     in.ProjectID,
 			"chunks_indexed": result.Indexed,
 			"points_deleted": result.Deleted,
 			"files_scanned":  result.FilesScanned,

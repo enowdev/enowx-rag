@@ -71,6 +71,20 @@ type ModelNamer interface {
 	ModelName() string
 }
 
+// RerankHit is a single reranked result: the Index of the original document
+// in the input slice and its relevance Score from the reranker.
+type RerankHit struct {
+	Index int     `json:"index"`
+	Score float64 `json:"relevance_score"`
+}
+
+// Reranker is an optional interface for reranking retrieved documents.
+// Implementations (e.g. VoyageReranker) call a rerank API to re-order
+// candidates by relevance to the query.
+type Reranker interface {
+	Rerank(ctx context.Context, query string, docs []string, topK int) ([]RerankHit, error)
+}
+
 // PointInfo is a stored point's ID together with the payload fields needed to
 // reconcile it against the current file set during incremental sync.
 type PointInfo struct {
