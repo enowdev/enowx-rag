@@ -17,35 +17,37 @@ import (
 
 // Config holds environment-based configuration for the RAG provider.
 type Config struct {
-	VectorStore  string // qdrant, chroma, pgvector
-	Embedder     string // tei, openai, voyage
-	QdrantURL    string // REST URL, e.g. http://localhost:6333 or https://qdrant.example.com
-	QdrantAPIKey string // optional API key for secured Qdrant instances
-	ChromaURL    string
-	PGVectorDSN  string
-	TEIBaseURL   string // e.g. http://localhost:8081
-	OpenAIKey    string
-	OpenAIBase   string
-	OpenAIModel  string
-	VoyageAPIKey string // Voyage AI API key
-	VoyageModel  string // e.g. voyage-3.5
-	VectorDim    int
+	VectorStore   string // qdrant, chroma, pgvector
+	Embedder      string // tei, openai, voyage
+	QdrantURL     string // REST URL, e.g. http://localhost:6333 or https://qdrant.example.com
+	QdrantAPIKey  string // optional API key for secured Qdrant instances
+	ChromaURL     string
+	PGVectorDSN   string
+	TEIBaseURL    string // e.g. http://localhost:8081
+	OpenAIKey     string
+	OpenAIBase    string
+	OpenAIModel   string
+	VoyageAPIKey  string // Voyage AI API key (used for both embeddings and reranking)
+	VoyageModel   string // e.g. voyage-4
+	RerankerModel string // rerank model, e.g. rerank-2.5 (empty = disabled)
+	VectorDim     int
 }
 
 func loadConfig() Config {
 	c := Config{
-		VectorStore:  getEnv("RAG_VECTOR_STORE", "qdrant"),
-		Embedder:     getEnv("RAG_EMBEDDER", "voyage"),
-		QdrantURL:    getEnv("RAG_QDRANT_URL", "http://localhost:6333"),
-		QdrantAPIKey: getEnv("RAG_QDRANT_API_KEY", ""),
-		ChromaURL:    getEnv("RAG_CHROMA_URL", "http://localhost:8000"),
-		PGVectorDSN:  getEnv("RAG_PGVECTOR_DSN", ""),
-		TEIBaseURL:   getEnv("RAG_TEI_URL", "http://localhost:8081"),
-		OpenAIKey:    getEnv("RAG_OPENAI_API_KEY", ""),
-		OpenAIBase:   getEnv("RAG_OPENAI_BASE_URL", "https://api.openai.com/v1"),
-		OpenAIModel:  getEnv("RAG_OPENAI_MODEL", "text-embedding-3-small"),
-		VoyageAPIKey: getEnv("RAG_VOYAGE_API_KEY", ""),
-		VoyageModel:  getEnv("RAG_VOYAGE_MODEL", "voyage-4"),
+		VectorStore:   getEnv("RAG_VECTOR_STORE", "qdrant"),
+		Embedder:      getEnv("RAG_EMBEDDER", "voyage"),
+		QdrantURL:     getEnv("RAG_QDRANT_URL", "http://localhost:6333"),
+		QdrantAPIKey:  getEnv("RAG_QDRANT_API_KEY", ""),
+		ChromaURL:     getEnv("RAG_CHROMA_URL", "http://localhost:8000"),
+		PGVectorDSN:   getEnv("RAG_PGVECTOR_DSN", ""),
+		TEIBaseURL:    getEnv("RAG_TEI_URL", "http://localhost:8081"),
+		OpenAIKey:     getEnv("RAG_OPENAI_API_KEY", ""),
+		OpenAIBase:    getEnv("RAG_OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		OpenAIModel:   getEnv("RAG_OPENAI_MODEL", "text-embedding-3-small"),
+		VoyageAPIKey:  getEnv("RAG_VOYAGE_API_KEY", ""),
+		VoyageModel:   getEnv("RAG_VOYAGE_MODEL", "voyage-4"),
+		RerankerModel: getEnv("RAG_RERANKER_MODEL", ""),
 	}
 	if d, err := strconv.Atoi(os.Getenv("RAG_VECTOR_DIM")); err == nil && d > 0 {
 		c.VectorDim = d
@@ -142,9 +144,18 @@ func main() {
 	defer provider.Close()
 
 	// Build the service layer that wraps provider + indexer.
-	// Reranker is nil for now; will be wired when rag-reranker feature is implemented.
 	idx := indexer.NewIndexer(provider, 1500)
-	svc := buildService(provider, nil, idx)
+
+	// Build the reranker when a model is configured and the Voyage API key
+	// is available. The reranker shares the same Voyage API key used for
+	// embeddings. When RerankerModel is empty, reranker is nil and
+	// Search with Rerank=true silently falls back to semantic order.
+	var reranker rag.Reranker
+	if cfg.RerankerModel != "" && cfg.VoyageAPIKey != "" {
+		reranker = rag.NewVoyageReranker(cfg.VoyageAPIKey, cfg.RerankerModel)
+	}
+
+	svc := buildService(provider, reranker, idx)
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "enowx-rag", Version: "0.1.0"}, &mcp.ServerOptions{
 		Instructions: "Per-project RAG memory: create collections, index project documents, and retrieve/semantic-search context. Connects to Qdrant/Chroma/pgvector with TEI embeddings.",
