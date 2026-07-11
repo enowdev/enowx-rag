@@ -41,20 +41,30 @@ func NewPGVectorProvider(ctx context.Context, dsn string, embedder EmbeddingClie
 		pool.Close()
 		return nil, err
 	}
+	if err := p.migrateCompositeKey(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	return p, nil
 }
 
 func (p *PGVectorProvider) ensureTable(ctx context.Context) error {
 	// The id column is TEXT (not UUID) because the indexer generates string
 	// IDs like "dir/file.go#chunk0". A UUID column would reject these IDs.
+	//
+	// PRIMARY KEY is (project_id, id) — a composite key — because the same
+	// source directory indexed into different projects generates identical
+	// doc IDs (e.g. "config/config.go#chunk0"). A single-column PK on id
+	// would cause cross-project data collisions.
 	query := fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS %s (
-	id TEXT PRIMARY KEY,
+	id TEXT NOT NULL,
 	project_id TEXT NOT NULL,
 	content TEXT NOT NULL,
 	metadata JSONB,
 	embedding vector(%d),
-	content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED
+	content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED,
+	PRIMARY KEY (project_id, id)
 );
 -- For tables created before content_tsv was added, add the column via ALTER.
 ALTER TABLE %s ADD COLUMN IF NOT EXISTS content_tsv tsvector
@@ -65,6 +75,42 @@ CREATE INDEX IF NOT EXISTS idx_%s_tsv ON %s USING GIN (content_tsv);
 `, p.table, p.dim, p.table, p.table, p.table, p.table, p.table, p.table, p.table)
 	_, err := p.pool.Exec(ctx, query)
 	return err
+}
+
+// migrateCompositeKey drops and recreates the table if it was created with
+// the old single-column PRIMARY KEY on id alone. This is necessary because
+// ALTER TABLE cannot change a PRIMARY KEY constraint in-place when existing
+// data may already have collisions under the new composite key. The caller
+// should only invoke this when upgrading from an older schema.
+func (p *PGVectorProvider) migrateCompositeKey(ctx context.Context) error {
+	// Check whether the table has the old single-column PK on "id".
+	var constraintName string
+	err := p.pool.QueryRow(ctx, `
+SELECT con.conname
+FROM pg_constraint con
+JOIN pg_class rel ON rel.oid = con.conrelid
+JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+WHERE rel.relname = $1
+  AND con.contype = 'p'
+  AND array_length(con.conkey, 1) = 1
+  AND con.conkey[1] = (
+      SELECT attnum FROM pg_attribute
+      WHERE attrelid = rel.oid AND attname = 'id'
+  )
+  AND nsp.nspname = current_schema()
+`, p.table).Scan(&constraintName)
+	if err != nil {
+		// No rows: either the table doesn't exist or the PK is already
+		// composite. Either way, nothing to migrate.
+		return nil
+	}
+	// Old single-column PK detected. Drop and recreate the table so the
+	// new composite PK takes effect. Data loss is expected during migration.
+	_, err = p.pool.Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", p.table))
+	if err != nil {
+		return fmt.Errorf("migrate: drop old table: %w", err)
+	}
+	return p.ensureTable(ctx)
 }
 
 func (p *PGVectorProvider) CreateCollection(ctx context.Context, projectID string) error {
@@ -116,7 +162,7 @@ func (p *PGVectorProvider) Index(ctx context.Context, projectID string, docs []D
 		batch.Queue(fmt.Sprintf(`
 INSERT INTO %s (id, project_id, content, metadata, embedding)
 VALUES ($1, $2, $3, $4, $5::vector)
-ON CONFLICT (id) DO UPDATE SET
+ON CONFLICT (project_id, id) DO UPDATE SET
 	content = EXCLUDED.content,
 	metadata = EXCLUDED.metadata,
 	embedding = EXCLUDED.embedding
