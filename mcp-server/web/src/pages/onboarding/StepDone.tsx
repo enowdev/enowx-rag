@@ -26,8 +26,9 @@ export function StepDone({ cfg, onBack, onComplete }: StepDoneProps) {
     setError(null)
     try {
       await api.setupApply(draftToRequest(cfg))
-      // Clear draft from localStorage
+      // Clear draft and step from localStorage
       localStorage.removeItem('wizard-draft')
+      localStorage.removeItem('wizard-step')
       onComplete()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save configuration')

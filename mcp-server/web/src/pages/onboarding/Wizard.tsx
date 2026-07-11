@@ -9,21 +9,20 @@ import { StepAutoSetup } from './StepAutoSetup'
 import { StepDone } from './StepDone'
 
 interface WizardProps {
-  initialStep?: Step
   onComplete: () => void
   theme: 'light' | 'dark'
   onToggleTheme: () => void
 }
 
-export function Wizard({ initialStep = 'welcome', onComplete, theme, onToggleTheme }: WizardProps) {
-  const [step, setStep] = useState<Step>(initialStep)
+export function Wizard({ onComplete, theme, onToggleTheme }: WizardProps) {
+  const [step, setStep] = useState<Step>(loadStep)
   const [cfg, setCfg] = useState<DraftConfig>(loadDraft)
   const [testResults, setTestResults] = useState<{
     vectorStore: { ok: boolean; message: string; latency_ms: number } | null
     embedder: { ok: boolean; message: string; latency_ms: number } | null
   }>({ vectorStore: null, embedder: null })
 
-  // Persist draft to localStorage so it survives navigation away and back.
+  // Persist full draft config to localStorage on every change (VAL-WIZ-033).
   useEffect(() => {
     try {
       localStorage.setItem('wizard-draft', JSON.stringify(cfg))
@@ -31,6 +30,15 @@ export function Wizard({ initialStep = 'welcome', onComplete, theme, onToggleThe
       // ignore
     }
   }, [cfg])
+
+  // Persist step position to localStorage on every change (VAL-WIZ-033).
+  useEffect(() => {
+    try {
+      localStorage.setItem('wizard-step', step)
+    } catch {
+      // ignore
+    }
+  }, [step])
 
   const stepIndex = STEPS.indexOf(step)
 
@@ -130,6 +138,18 @@ export function Wizard({ initialStep = 'welcome', onComplete, theme, onToggleThe
       </div>
     </div>
   )
+}
+
+function loadStep(): Step {
+  try {
+    const stored = localStorage.getItem('wizard-step')
+    if (stored && (STEPS as readonly string[]).includes(stored)) {
+      return stored as Step
+    }
+  } catch {
+    // ignore
+  }
+  return 'welcome'
 }
 
 function loadDraft(): DraftConfig {
