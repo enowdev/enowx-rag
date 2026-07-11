@@ -1,5 +1,7 @@
 # Binaries
 mcp-server/mcp-server
+mcp-server/enowx-rag
+enowx-rag
 mcp-server/*.exe
 
 # Go
