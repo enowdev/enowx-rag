@@ -1,10 +1,12 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Search, RotateCcw, Inbox, AlertCircle, Radio } from 'lucide-react'
 import { api, type SearchResult } from '../lib/api'
 import { useEvents } from '../lib/sse'
 
 interface PlaygroundProps {
   activeProject: string
+  sharedQuery?: string
+  onSharedQueryChange?: (q: string) => void
 }
 
 function scoreColor(score: number): string {
@@ -30,8 +32,8 @@ function highlightSnippet(content: string, query: string): React.ReactNode {
   )
 }
 
-export function Playground({ activeProject }: PlaygroundProps) {
-  const [query, setQuery] = useState('')
+export function Playground({ activeProject, sharedQuery, onSharedQueryChange }: PlaygroundProps) {
+  const [query, setQuery] = useState(sharedQuery || '')
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -42,6 +44,19 @@ export function Playground({ activeProject }: PlaygroundProps) {
   const [k, setK] = useState(5)
   const [recall, setRecall] = useState(40)
   const { events, connected } = useEvents()
+
+  // Sync local query when sharedQuery changes (e.g., arriving from Overview)
+  useEffect(() => {
+    if (sharedQuery !== undefined && sharedQuery !== query) {
+      setQuery(sharedQuery)
+    }
+  }, [sharedQuery]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Propagate query changes up to the shared state
+  const handleQueryChange = useCallback((newQuery: string) => {
+    setQuery(newQuery)
+    onSharedQueryChange?.(newQuery)
+  }, [onSharedQueryChange])
 
   const runSearch = useCallback(async () => {
     if (!activeProject || !query.trim()) return
@@ -103,7 +118,7 @@ export function Playground({ activeProject }: PlaygroundProps) {
                 className="query-input"
                 type="text"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => handleQueryChange(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && runSearch()}
                 placeholder="Enter a retrieval query…"
               />

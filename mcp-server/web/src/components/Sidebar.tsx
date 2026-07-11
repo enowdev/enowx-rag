@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { LayoutGrid, Search, List, Settings } from 'lucide-react'
 import type { Page, ProjectInfo } from '../App'
 import { api } from '../lib/api'
+import { useEvents } from '../lib/sse'
 
 interface SidebarProps {
   page: Page
@@ -21,11 +22,10 @@ const navItems: { label: string; page: Page; icon: typeof LayoutGrid }[] = [
 
 export function Sidebar({ page, onNavigate, projects, activeProject, onSelectProject, onProjectsLoaded }: SidebarProps) {
   const [localProjects, setLocalProjects] = useState<ProjectInfo[]>(projects)
+  const { events } = useEvents()
 
-  useEffect(() => {
-    let cancelled = false
+  const fetchProjects = useCallback(() => {
     api.listProjects().then((stats) => {
-      if (cancelled) return
       const projs: ProjectInfo[] = stats.map((s) => ({ projectID: s.project_id, chunkCount: s.chunk_count }))
       setLocalProjects(projs)
       onProjectsLoaded(projs)
@@ -47,9 +47,47 @@ export function Sidebar({ page, onNavigate, projects, activeProject, onSelectPro
         onProjectsLoaded(mock)
       }
     })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let cancelled = false
+    api.listProjects().then((stats) => {
+      if (cancelled) return
+      const projs: ProjectInfo[] = stats.map((s) => ({ projectID: s.project_id, chunkCount: s.chunk_count }))
+      setLocalProjects(projs)
+      onProjectsLoaded(projs)
+    }).catch(() => {
+      if (cancelled) return
+      // API not available yet, use mock data for UI rendering
+      if (localProjects.length === 0) {
+        const mock: ProjectInfo[] = [
+          { projectID: 'enowx-rag', chunkCount: 76 },
+          { projectID: 'robloxkit', chunkCount: 2140 },
+          { projectID: 'enowxreality', chunkCount: 1883 },
+          { projectID: 'reality-client-rs', chunkCount: 642 },
+          { projectID: 'antaresban', chunkCount: 508 },
+          { projectID: 'pixelify', chunkCount: 431 },
+          { projectID: 'enowxai', chunkCount: 377 },
+          { projectID: 'enowx-discord', chunkCount: 294 },
+          { projectID: 'reality-auto-login', chunkCount: 210 },
+        ]
+        setLocalProjects(mock)
+        onProjectsLoaded(mock)
+      }
+    })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // VAL-CROSS-011, VAL-CROSS-012: Refresh project list when SSE events
+  // indicate a change in projects or chunk counts.
+  useEffect(() => {
+    if (events.length === 0) return
+    const latest = events[0]
+    if (latest.type === 'index_completed' || latest.type === 'project_deleted' || latest.type === 'project_created' || latest.type === 'points_deleted' || latest.type === 'documents_indexed') {
+      fetchProjects()
+    }
+  }, [events, fetchProjects])
 
   const displayProjects = localProjects.length > 0 ? localProjects : projects
 

@@ -7,6 +7,10 @@ import { useEvents } from '../lib/sse'
 interface OverviewProps {
   activeProject: string
   onNavigate: (p: Page) => void
+  onNavigateWithQuery?: (p: Page, query: string) => void
+  sharedQuery?: string
+  onSharedQueryChange?: (q: string) => void
+  onProjectsUpdated?: (projs: { projectID: string; chunkCount: number }[]) => void
 }
 
 // Mock data for fallback when API is unavailable
@@ -60,8 +64,8 @@ function highlightSnippet(content: string, query: string): React.ReactNode {
   )
 }
 
-export function Overview({ activeProject, onNavigate }: OverviewProps) {
-  const [query, setQuery] = useState('how does pgvector handle stale chunks')
+export function Overview({ activeProject, onNavigate, onNavigateWithQuery, sharedQuery, onSharedQueryChange, onProjectsUpdated }: OverviewProps) {
+  const [query, setQuery] = useState(sharedQuery || 'how does pgvector handle stale chunks')
   const [results, setResults] = useState<SearchResult[]>(mockResults)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -73,14 +77,43 @@ export function Overview({ activeProject, onNavigate }: OverviewProps) {
   const [stats, setStats] = useState<{ totalProjects: number; totalChunks: number; embedModel: string } | null>(null)
   const { events } = useEvents()
 
-  // Fetch stats on mount and when activeProject changes
+  // Sync local query when sharedQuery changes (e.g., when arriving from Playground)
   useEffect(() => {
+    if (sharedQuery && sharedQuery !== query) {
+      setQuery(sharedQuery)
+    }
+  }, [sharedQuery]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Propagate query changes up to the shared state
+  const handleQueryChange = useCallback((newQuery: string) => {
+    setQuery(newQuery)
+    onSharedQueryChange?.(newQuery)
+  }, [onSharedQueryChange])
+
+  // Fetch stats on mount, when activeProject changes, and when index_completed
+  // or project_deleted SSE events arrive (VAL-CROSS-011, VAL-CROSS-012).
+  const refreshStats = useCallback(() => {
     api.stats().then((s) => {
       setStats({ totalProjects: s.total_projects, totalChunks: s.total_chunks, embedModel: s.embed_model })
+      // Also update the parent's project list so the sidebar stays in sync
+      onProjectsUpdated?.(s.projects.map((p) => ({ projectID: p.project_id, chunkCount: p.chunk_count })))
     }).catch(() => {
       setStats({ totalProjects: 9, totalChunks: 76, embedModel: 'voyage-4' })
     })
-  }, [activeProject])
+  }, [onProjectsUpdated])
+
+  useEffect(() => {
+    refreshStats()
+  }, [activeProject, refreshStats])
+
+  // Listen for SSE events that should trigger a stats refresh
+  useEffect(() => {
+    if (events.length === 0) return
+    const latest = events[0]
+    if (latest.type === 'index_completed' || latest.type === 'project_deleted' || latest.type === 'points_deleted' || latest.type === 'documents_indexed') {
+      refreshStats()
+    }
+  }, [events, refreshStats])
 
   const runSearch = useCallback(async () => {
     if (!activeProject || !query.trim()) return
@@ -149,7 +182,7 @@ export function Overview({ activeProject, onNavigate }: OverviewProps) {
             <RefreshCw size={14} strokeWidth={1.7} />
             Re-index
           </button>
-          <button className="btn primary" onClick={() => onNavigate('playground')}>
+          <button className="btn primary" onClick={() => onNavigateWithQuery ? onNavigateWithQuery('playground', query) : onNavigate('playground')}>
             <Search size={14} strokeWidth={1.7} />
             New query
           </button>
@@ -212,7 +245,7 @@ export function Overview({ activeProject, onNavigate }: OverviewProps) {
                 className="query-input"
                 type="text"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => handleQueryChange(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && runSearch()}
                 placeholder="Enter a query…"
               />

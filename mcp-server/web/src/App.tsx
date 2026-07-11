@@ -24,6 +24,9 @@ function App() {
   const [page, setPage] = useState<Page>('overview')
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [activeProject, setActiveProject] = useState<string>('')
+  // Shared query state: VAL-CROSS-010 requires that the query entered in the
+  // Overview playground persists when navigating to the full Playground page.
+  const [sharedQuery, setSharedQuery] = useState('')
 
   // First-run detection: check if config exists on load.
   // If no config, show wizard. If config exists, show dashboard.
@@ -54,6 +57,13 @@ function App() {
   }, [])
 
   const handleNavigate = useCallback((p: Page) => {
+    setPage(p)
+  }, [])
+
+  // VAL-CROSS-010: Navigate to Playground while preserving the query from
+  // the Overview playground.
+  const handleNavigateWithQuery = useCallback((p: Page, query: string) => {
+    setSharedQuery(query)
     setPage(p)
   }, [])
 
@@ -92,8 +102,8 @@ function App() {
       <div className="main">
         <Topbar theme={theme} onToggleTheme={toggleTheme} activeProject={activeProject} page={page} />
         <div className="content">
-          {page === 'overview' && <Overview activeProject={activeProject} onNavigate={handleNavigate} />}
-          {page === 'playground' && <Playground activeProject={activeProject} />}
+          {page === 'overview' && <Overview activeProject={activeProject} onNavigate={handleNavigate} onNavigateWithQuery={handleNavigateWithQuery} sharedQuery={sharedQuery} onSharedQueryChange={setSharedQuery} onProjectsUpdated={setProjects} />}
+          {page === 'playground' && <Playground activeProject={activeProject} sharedQuery={sharedQuery} onSharedQueryChange={setSharedQuery} />}
           {page === 'chunks' && <Chunks activeProject={activeProject} />}
           {page === 'setup' && <Setup />}
         </div>
