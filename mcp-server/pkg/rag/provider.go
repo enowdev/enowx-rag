@@ -71,6 +71,15 @@ type ModelNamer interface {
 	ModelName() string
 }
 
+// HybridSearcher is an optional interface for providers that support hybrid
+// search combining dense vector similarity with lexical full-text search
+// using Reciprocal Rank Fusion (RRF). Providers that implement this
+// interface are used by core.Service.Search when opts.Hybrid is true.
+// Providers that do not implement it fall back to dense-only SemanticSearch.
+type HybridSearcher interface {
+	SemanticSearchHybrid(ctx context.Context, projectID, query string, limit int) ([]Result, error)
+}
+
 // RerankHit is a single reranked result: the Index of the original document
 // in the input slice and its relevance Score from the reranker.
 type RerankHit struct {

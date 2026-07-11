@@ -25,6 +25,9 @@ type mockProvider struct {
 	listPointsCalls  int
 	closeCalls       int
 
+	// Hybrid search tracking
+	hybridCalls int
+
 	// Configurable behaviours
 	searchErr   error
 	searchLimit int // captured limit
@@ -76,6 +79,22 @@ func (m *mockProvider) SemanticSearch(ctx context.Context, projectID, query stri
 	if m.searchErr != nil {
 		return nil, m.searchErr
 	}
+	return m.generateResults()
+}
+
+// SemanticSearchHybrid implements rag.HybridSearcher for testing hybrid search.
+func (m *mockProvider) SemanticSearchHybrid(ctx context.Context, projectID, query string, limit int) ([]rag.Result, error) {
+	m.mu.Lock()
+	m.hybridCalls++
+	m.searchLimit = limit
+	m.mu.Unlock()
+	if m.searchErr != nil {
+		return nil, m.searchErr
+	}
+	return m.generateResults()
+}
+
+func (m *mockProvider) generateResults() ([]rag.Result, error) {
 	if m.results != nil {
 		return m.results, nil
 	}
@@ -147,6 +166,7 @@ func (m *mockProvider) ListProjectIDs(ctx context.Context) ([]string, error) {
 // Compile-time assertions
 var _ rag.Provider = (*mockProvider)(nil)
 var _ ProjectLister = (*mockProvider)(nil)
+var _ rag.HybridSearcher = (*mockProvider)(nil)
 
 // --- Mock Reranker ---
 
@@ -752,3 +772,169 @@ func TestIndexProject(t *testing.T) {
 		t.Error("expected provider.Index to be called at least once")
 	}
 }
+
+// TestSearchHybridUsesHybridSearcher verifies that when opts.Hybrid=true and
+// the provider implements HybridSearcher, Search calls SemanticSearchHybrid
+// instead of SemanticSearch.
+// This satisfies VAL-RAG-010 (hybrid path used when hybrid=true).
+func TestSearchHybridUsesHybridSearcher(t *testing.T) {
+	p := &mockProvider{}
+	svc := NewService(p, nil, nil)
+
+	_, err := svc.Search(context.Background(), "proj", "query", SearchOpts{
+		K: 5, Recall: 10, Hybrid: true,
+	})
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.hybridCalls == 0 {
+		t.Error("expected SemanticSearchHybrid to be called when Hybrid=true")
+	}
+	if p.searchCalls != 0 {
+		t.Error("SemanticSearch should NOT be called when Hybrid=true and provider implements HybridSearcher")
+	}
+}
+
+// TestSearchHybridFalseUsesDenseOnly verifies that when opts.Hybrid=false,
+// Search calls SemanticSearch (dense-only), not SemanticSearchHybrid.
+func TestSearchHybridFalseUsesDenseOnly(t *testing.T) {
+	p := &mockProvider{}
+	svc := NewService(p, nil, nil)
+
+	_, err := svc.Search(context.Background(), "proj", "query", SearchOpts{
+		K: 5, Recall: 10, Hybrid: false,
+	})
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.searchCalls == 0 {
+		t.Error("expected SemanticSearch to be called when Hybrid=false")
+	}
+	if p.hybridCalls != 0 {
+		t.Error("SemanticSearchHybrid should NOT be called when Hybrid=false")
+	}
+}
+
+// TestSearchHybridWithRerank verifies that hybrid search + rerank works
+// end-to-end: hybrid recall -> rerank -> top-K.
+// This satisfies VAL-RAG-015.
+func TestSearchHybridWithRerank(t *testing.T) {
+	// Generate 10 candidate results
+	results := make([]rag.Result, 10)
+	for i := range results {
+		results[i] = rag.Result{
+			ID:      fmt.Sprintf("hybrid-%d", i),
+			Content: fmt.Sprintf("hybrid content %d", i),
+			Score:   float64(10-i) / 10.0,
+		}
+	}
+	p := &mockProvider{results: results}
+	reranker := &mockReranker{
+		hits: []rag.RerankHit{
+			{Index: 3, Score: 0.95},
+			{Index: 1, Score: 0.80},
+			{Index: 0, Score: 0.70},
+		},
+	}
+	svc := NewService(p, reranker, nil)
+
+	out, err := svc.Search(context.Background(), "proj", "query", SearchOpts{
+		K: 3, Recall: 10, Hybrid: true, Rerank: true,
+	})
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+
+	if len(out) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(out))
+	}
+
+	// Verify hybrid was used for retrieval
+	p.mu.Lock()
+	hybridUsed := p.hybridCalls > 0
+	p.mu.Unlock()
+	if !hybridUsed {
+		t.Error("expected SemanticSearchHybrid to be called for hybrid retrieval")
+	}
+
+	// Verify reranker was called
+	reranker.mu.Lock()
+	rerankCalled := reranker.calls > 0
+	reranker.mu.Unlock()
+	if !rerankCalled {
+		t.Error("expected reranker to be called")
+	}
+
+	// Verify results have reranker scores
+	if out[0].Score != 0.95 {
+		t.Errorf("expected first result score 0.95 from reranker, got %f", out[0].Score)
+	}
+}
+
+// TestSearchHybridProviderNotHybridSearcher verifies that when the provider
+// does NOT implement HybridSearcher and Hybrid=true, Search falls back to
+// dense-only SemanticSearch without error.
+func TestSearchHybridProviderNotHybridSearcher(t *testing.T) {
+	// mockProviderNonHybrid implements Provider but NOT HybridSearcher
+	p := &mockProviderNonHybrid{}
+	svc := NewService(p, nil, nil)
+
+	results, err := svc.Search(context.Background(), "proj", "query", SearchOpts{
+		K: 5, Recall: 10, Hybrid: true,
+	})
+	if err != nil {
+		t.Fatalf("Search should not error when provider doesn't implement HybridSearcher: %v", err)
+	}
+
+	if len(results) != 5 {
+		t.Errorf("expected 5 results, got %d", len(results))
+	}
+
+	if p.searchCalls == 0 {
+		t.Error("expected SemanticSearch to be called as fallback")
+	}
+}
+
+// mockProviderNonHybrid implements Provider but NOT HybridSearcher.
+type mockProviderNonHybrid struct {
+	searchCalls int
+}
+
+func (m *mockProviderNonHybrid) CreateCollection(ctx context.Context, projectID string) error { return nil }
+func (m *mockProviderNonHybrid) DeleteCollection(ctx context.Context, projectID string) error { return nil }
+func (m *mockProviderNonHybrid) Index(ctx context.Context, projectID string, docs []rag.Document) error {
+	return nil
+}
+func (m *mockProviderNonHybrid) SemanticSearch(ctx context.Context, projectID, query string, limit int) ([]rag.Result, error) {
+	m.searchCalls++
+	results := make([]rag.Result, 10)
+	for i := range results {
+		results[i] = rag.Result{
+			ID:      fmt.Sprintf("result-%d", i),
+			Content: fmt.Sprintf("content-%d", i),
+			Score:   float64(10-i) / 10.0,
+		}
+	}
+	return results, nil
+}
+func (m *mockProviderNonHybrid) Embed(ctx context.Context, text string) ([]float32, error) {
+	return nil, nil
+}
+func (m *mockProviderNonHybrid) DeletePoints(ctx context.Context, projectID string, pointIDs []string) error {
+	return nil
+}
+func (m *mockProviderNonHybrid) ListPointIDs(ctx context.Context, projectID string, metaFilter map[string]string) ([]string, error) {
+	return nil, nil
+}
+func (m *mockProviderNonHybrid) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]rag.PointInfo, error) {
+	return nil, nil
+}
+func (m *mockProviderNonHybrid) Close() error { return nil }
+
+var _ rag.Provider = (*mockProviderNonHybrid)(nil)

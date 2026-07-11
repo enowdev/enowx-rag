@@ -127,6 +127,19 @@ func (s *Service) Provider() rag.Provider {
 	return s.provider
 }
 
+// retrieveCandidates fetches recall candidates from the provider. When hybrid
+// is true and the provider implements HybridSearcher, it uses the hybrid
+// search path (dense + lexical RRF). Otherwise it falls back to dense-only
+// SemanticSearch.
+func (s *Service) retrieveCandidates(ctx context.Context, projectID, query string, recall int, hybrid bool) ([]rag.Result, error) {
+	if hybrid {
+		if hs, ok := s.provider.(rag.HybridSearcher); ok {
+			return hs.SemanticSearchHybrid(ctx, projectID, query, recall)
+		}
+	}
+	return s.provider.SemanticSearch(ctx, projectID, query, recall)
+}
+
 // Search performs a semantic search with optional reranking.
 //
 // Flow:
@@ -147,7 +160,7 @@ func (s *Service) Search(ctx context.Context, projectID, query string, opts Sear
 		recall = DefaultRecall
 	}
 
-	cands, err := s.provider.SemanticSearch(ctx, projectID, query, recall)
+	cands, err := s.retrieveCandidates(ctx, projectID, query, recall, opts.Hybrid)
 	if err != nil {
 		return nil, err
 	}

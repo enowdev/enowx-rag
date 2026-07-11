@@ -51,11 +51,16 @@ CREATE TABLE IF NOT EXISTS %s (
 	project_id TEXT NOT NULL,
 	content TEXT NOT NULL,
 	metadata JSONB,
-	embedding vector(%d)
+	embedding vector(%d),
+	content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED
 );
+-- For tables created before content_tsv was added, add the column via ALTER.
+ALTER TABLE %s ADD COLUMN IF NOT EXISTS content_tsv tsvector
+	GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED;
 CREATE INDEX IF NOT EXISTS idx_%s_project_id ON %s (project_id);
 CREATE INDEX IF NOT EXISTS idx_%s_embedding ON %s USING hnsw (embedding vector_cosine_ops);
-`, p.table, p.dim, p.table, p.table, p.table, p.table)
+CREATE INDEX IF NOT EXISTS idx_%s_tsv ON %s USING GIN (content_tsv);
+`, p.table, p.dim, p.table, p.table, p.table, p.table, p.table, p.table, p.table)
 	_, err := p.pool.Exec(ctx, query)
 	return err
 }
@@ -145,6 +150,78 @@ ORDER BY embedding <=> $1::vector
 LIMIT $3
 `, p.table)
 	rows, err := p.pool.Query(ctx, q, pgVectorLiteral(queryVec), projectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []Result{}
+	for rows.Next() {
+		var r Result
+		var meta map[string]string
+		if err := rows.Scan(&r.ID, &r.Content, &meta, &r.Score); err != nil {
+			return nil, err
+		}
+		r.Meta = meta
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SemanticSearchHybrid implements the HybridSearcher interface. It combines
+// dense vector similarity (cosine) with lexical full-text search (ts_rank)
+// using Reciprocal Rank Fusion (RRF) with k=60. The dense and lexical
+// rankings are merged via a FULL OUTER JOIN on the document id.
+//
+// RRF score = COALESCE(1.0/(60+dense_rank), 0) + COALESCE(1.0/(60+lexical_rank), 0)
+//
+// This returns different results than dense-only search for keyword-heavy
+// queries because documents that match the query text exactly get a boost
+// from the lexical ranking that dense-only search would miss.
+func (p *PGVectorProvider) SemanticSearchHybrid(ctx context.Context, projectID, query string, limit int) ([]Result, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	var queryVec []float32
+	if qe, ok := p.embedder.(QueryEmbedder); ok {
+		v, err := qe.EmbedQuery(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		queryVec = v
+	} else {
+		vectors, err := p.embedder.Embed(ctx, []string{query})
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		queryVec = vectors[0]
+	}
+	q := fmt.Sprintf(`
+WITH dense AS (
+  SELECT id, content, metadata,
+         ROW_NUMBER() OVER (ORDER BY embedding <=> $1::vector) AS rank
+  FROM %s
+  WHERE project_id = $2
+  ORDER BY embedding <=> $1::vector
+  LIMIT $3
+),
+lexical AS (
+  SELECT id, content, metadata,
+         ROW_NUMBER() OVER (ORDER BY ts_rank(content_tsv, plainto_tsquery('simple', $4)) DESC) AS rank
+  FROM %s
+  WHERE project_id = $2 AND content_tsv @@ plainto_tsquery('simple', $4)
+  LIMIT $3
+)
+SELECT COALESCE(d.id, l.id) AS id,
+       COALESCE(d.content, l.content) AS content,
+       COALESCE(d.metadata, l.metadata) AS metadata,
+       (COALESCE(1.0/(60+d.rank), 0) + COALESCE(1.0/(60+l.rank), 0)) AS score
+FROM dense d
+FULL OUTER JOIN lexical l ON d.id = l.id
+ORDER BY score DESC
+LIMIT $3
+`, p.table, p.table)
+	rows, err := p.pool.Query(ctx, q, pgVectorLiteral(queryVec), projectID, limit, query)
 	if err != nil {
 		return nil, err
 	}
@@ -255,3 +332,6 @@ func pgVectorLiteral(v []float32) string {
 	}
 	return "[" + strings.Join(parts, ",") + "]"
 }
+
+// Compile-time assertion that PGVectorProvider implements HybridSearcher.
+var _ HybridSearcher = (*PGVectorProvider)(nil)
