@@ -13,10 +13,10 @@ type Document struct {
 
 // Result is a retrieved chunk with its similarity score.
 type Result struct {
-	ID      string
-	Content string
-	Score   float64
-	Meta    map[string]string
+	ID      string            `json:"id"`
+	Content string            `json:"content"`
+	Score   float64           `json:"score"`
+	Meta    map[string]string `json:"meta,omitempty"`
 }
 
 // Provider describes a RAG backend capable of per-project collections.
@@ -97,8 +97,9 @@ type Reranker interface {
 // PointInfo is a stored point's ID together with the payload fields needed to
 // reconcile it against the current file set during incremental sync.
 type PointInfo struct {
-	ID          string
-	SourceFile  string
-	ContentHash string // content_hash from metadata, used for skip-if-unchanged
-	DocID       string // original document ID (Qdrant stores UUID, doc_id preserves the original)
+	ID           string `json:"id"`
+	SourceFile   string `json:"source_file,omitempty"`
+	ContentHash  string `json:"content_hash,omitempty"`
+	ChunkVersion string `json:"chunk_version,omitempty"`
+	DocID        string `json:"doc_id,omitempty"` // original document ID (Qdrant stores UUID, doc_id preserves the original)
 }

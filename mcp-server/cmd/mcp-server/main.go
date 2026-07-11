@@ -2,71 +2,74 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io/fs"
 	"log"
+	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/enowdev/enowx-rag/pkg/config"
 	"github.com/enowdev/enowx-rag/pkg/core"
+	"github.com/enowdev/enowx-rag/pkg/httpapi"
 	"github.com/enowdev/enowx-rag/pkg/indexer"
 	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/web"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Config holds environment-based configuration for the RAG provider.
-type Config struct {
-	VectorStore   string // qdrant, chroma, pgvector
-	Embedder      string // tei, openai, voyage
-	QdrantURL     string // REST URL, e.g. http://localhost:6333 or https://qdrant.example.com
-	QdrantAPIKey  string // optional API key for secured Qdrant instances
+// RuntimeConfig holds the resolved configuration used to build the service
+// layer. It is populated from three sources with strict priority:
+// environment variables > config file (~/.enowx-rag/config.yaml) > defaults.
+type RuntimeConfig struct {
+	VectorStore   string
+	Embedder      string
+	QdrantURL     string
+	QdrantAPIKey  string
 	ChromaURL     string
 	PGVectorDSN   string
-	TEIBaseURL    string // e.g. http://localhost:8081
-	OpenAIKey     string
-	OpenAIBase    string
-	OpenAIModel   string
-	VoyageAPIKey  string // Voyage AI API key (used for both embeddings and reranking)
-	VoyageModel   string // e.g. voyage-4
-	RerankerModel string // rerank model, e.g. rerank-2.5 (empty = disabled)
+	TEIBaseURL    string
+	VoyageAPIKey  string
+	VoyageModel   string
+	RerankerModel string
 	VectorDim     int
 }
 
-func loadConfig() Config {
-	c := Config{
-		VectorStore:   getEnv("RAG_VECTOR_STORE", "qdrant"),
-		Embedder:      getEnv("RAG_EMBEDDER", "voyage"),
-		QdrantURL:     getEnv("RAG_QDRANT_URL", "http://localhost:6333"),
-		QdrantAPIKey:  getEnv("RAG_QDRANT_API_KEY", ""),
-		ChromaURL:     getEnv("RAG_CHROMA_URL", "http://localhost:8000"),
-		PGVectorDSN:   getEnv("RAG_PGVECTOR_DSN", ""),
-		TEIBaseURL:    getEnv("RAG_TEI_URL", "http://localhost:8081"),
-		OpenAIKey:     getEnv("RAG_OPENAI_API_KEY", ""),
-		OpenAIBase:    getEnv("RAG_OPENAI_BASE_URL", "https://api.openai.com/v1"),
-		OpenAIModel:   getEnv("RAG_OPENAI_MODEL", "text-embedding-3-small"),
-		VoyageAPIKey:  getEnv("RAG_VOYAGE_API_KEY", ""),
-		VoyageModel:   getEnv("RAG_VOYAGE_MODEL", "voyage-4"),
-		RerankerModel: getEnv("RAG_RERANKER_MODEL", ""),
+// resolveConfig builds a RuntimeConfig from the three-tier priority:
+// env var > config file > default. It uses pkg/config.Resolve() which
+// handles the file loading and env override logic.
+func resolveConfig() (*RuntimeConfig, error) {
+	cfg, err := config.Resolve()
+	if err != nil {
+		return nil, fmt.Errorf("resolve config: %w", err)
 	}
-	if d, err := strconv.Atoi(os.Getenv("RAG_VECTOR_DIM")); err == nil && d > 0 {
-		c.VectorDim = d
+
+	rc := &RuntimeConfig{
+		VectorStore:   cfg.VectorStore,
+		Embedder:      cfg.Embedder,
+		QdrantURL:     cfg.QdrantURL,
+		QdrantAPIKey:  cfg.QdrantAPIKey,
+		ChromaURL:     cfg.ChromaURL,
+		PGVectorDSN:   cfg.PGVectorDSN,
+		TEIBaseURL:    cfg.TEIURL,
+		VoyageAPIKey:  cfg.Voyage.APIKey,
+		VoyageModel:   cfg.Voyage.Model,
+		RerankerModel: cfg.RerankerModel,
+		VectorDim:     cfg.Voyage.Dim,
 	}
-	// Fall back to tei if voyage key is missing and embedder wasn't set explicitly
-	if c.Embedder == "voyage" && c.VoyageAPIKey == "" && os.Getenv("RAG_EMBEDDER") == "" {
-		c.Embedder = "tei"
+
+	// Fall back to tei if voyage key is missing and embedder wasn't set
+	// explicitly via env var. This preserves the original main.go behavior.
+	if rc.Embedder == "voyage" && rc.VoyageAPIKey == "" && os.Getenv("RAG_EMBEDDER") == "" {
+		rc.Embedder = "tei"
 	}
-	return c
+
+	return rc, nil
 }
 
-func getEnv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-func buildProvider(ctx context.Context, cfg Config) (rag.Provider, error) {
+func buildProvider(ctx context.Context, cfg *RuntimeConfig) (rag.Provider, error) {
 	var embedder rag.EmbeddingClient
 	switch strings.ToLower(cfg.Embedder) {
 	case "tei":
@@ -134,7 +137,15 @@ type ScanProjectInput struct {
 }
 
 func main() {
-	cfg := loadConfig()
+	serve := flag.Bool("serve", false, "run HTTP+UI server instead of stdio MCP")
+	addr := flag.String("addr", ":7777", "HTTP listen address (only used with --serve)")
+	flag.Parse()
+
+	cfg, err := resolveConfig()
+	if err != nil {
+		log.Fatalf("failed to resolve config: %v", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	provider, err := buildProvider(ctx, cfg)
 	cancel()
@@ -156,11 +167,51 @@ func main() {
 	}
 
 	svc := buildService(provider, reranker, idx)
+	svc.SetEmbedModel(cfg.VoyageModel)
 
+	if *serve {
+		runHTTP(svc, *addr, cfg)
+		return
+	}
+	runStdio(svc, cfg)
+}
+
+// runStdio starts the MCP server in stdio mode. This is the default mode
+// when --serve is not passed. Logs go to stderr (stdout is MCP protocol).
+func runStdio(svc *core.Service, cfg *RuntimeConfig) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "enowx-rag", Version: "0.1.0"}, &mcp.ServerOptions{
 		Instructions: "Per-project RAG memory: create collections, index project documents, and retrieve/semantic-search context. Connects to Qdrant/Chroma/pgvector with TEI embeddings.",
 	})
 
+	registerMCPTools(server, svc)
+
+	// Log tool configuration to stderr so it doesn't interfere with stdio transport.
+	fmt.Fprintf(os.Stderr, "enowx-rag mcp-server ready: vector_store=%s embedder=%s\n", cfg.VectorStore, cfg.Embedder)
+	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// runHTTP starts the HTTP API + SPA server on the given address.
+func runHTTP(svc *core.Service, addr string, cfg *RuntimeConfig) {
+	// Extract the dist subdirectory from the embedded filesystem.
+	distFS, err := fs.Sub(web.Dist, "dist")
+	if err != nil {
+		log.Fatalf("failed to get embedded dist: %v", err)
+	}
+
+	handler := httpapi.NewRouter(svc, distFS)
+
+	fmt.Fprintf(os.Stderr, "enowx-rag HTTP server starting on %s: vector_store=%s embedder=%s\n", addr, cfg.VectorStore, cfg.Embedder)
+	if err := http.ListenAndServe(addr, handler); err != nil {
+		log.Fatalf("HTTP server error: %v", err)
+	}
+}
+
+// registerMCPTools registers all six MCP tools on the server, each as a thin
+// wrapper over the core.Service methods. No direct provider/indexer calls
+// are made inside the closures.
+func registerMCPTools(server *mcp.Server, svc *core.Service) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "rag_create_project",
 		Description: "Create a new RAG collection for a project. Safe to call if collection already exists.",
@@ -239,11 +290,4 @@ func main() {
 			"stale_error":    result.StaleError,
 		}, nil
 	})
-
-	// Log tool configuration to stderr so it doesn't interfere with stdio transport.
-	fmt.Fprintf(os.Stderr, "enowx-rag mcp-server ready: vector_store=%s embedder=%s\n", cfg.VectorStore, cfg.Embedder)
-	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-		log.Fatal(err)
-	}
 }
-

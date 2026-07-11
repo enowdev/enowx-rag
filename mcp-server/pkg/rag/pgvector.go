@@ -285,7 +285,7 @@ func (p *PGVectorProvider) ListPointIDs(ctx context.Context, projectID string, m
 }
 
 func (p *PGVectorProvider) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error) {
-	q := fmt.Sprintf("SELECT id::text, metadata->>'source_file', metadata->>'content_hash', metadata->>'doc_id' FROM %s WHERE project_id = $1", p.table)
+	q := fmt.Sprintf("SELECT id::text, metadata->>'source_file', metadata->>'content_hash', metadata->>'chunk_version', metadata->>'doc_id' FROM %s WHERE project_id = $1", p.table)
 	args := []any{projectID}
 	if v, ok := metaFilter["source_file"]; ok {
 		q += " AND metadata->>'source_file' = $2"
@@ -301,8 +301,9 @@ func (p *PGVectorProvider) ListPoints(ctx context.Context, projectID string, met
 		var id string
 		var sourceFile *string
 		var contentHash *string
+		var chunkVersion *string
 		var docID *string
-		if err := rows.Scan(&id, &sourceFile, &contentHash, &docID); err != nil {
+		if err := rows.Scan(&id, &sourceFile, &contentHash, &chunkVersion, &docID); err != nil {
 			return nil, err
 		}
 		pi := PointInfo{ID: id}
@@ -311,6 +312,9 @@ func (p *PGVectorProvider) ListPoints(ctx context.Context, projectID string, met
 		}
 		if contentHash != nil {
 			pi.ContentHash = *contentHash
+		}
+		if chunkVersion != nil {
+			pi.ChunkVersion = *chunkVersion
 		}
 		if docID != nil {
 			pi.DocID = *docID
@@ -325,6 +329,29 @@ func (p *PGVectorProvider) Close() error {
 	return nil
 }
 
+// ListProjectIDs returns all distinct project_id values that currently have
+// at least one row in the project memory table. This implements the
+// core.ProjectLister interface, enabling GET /api/projects to enumerate
+// projects without prior knowledge.
+func (p *PGVectorProvider) ListProjectIDs(ctx context.Context) ([]string, error) {
+	q := fmt.Sprintf("SELECT DISTINCT project_id FROM %s ORDER BY project_id", p.table)
+	rows, err := p.pool.Query(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func pgVectorLiteral(v []float32) string {
 	parts := make([]string, len(v))
 	for i, x := range v {
@@ -335,3 +362,14 @@ func pgVectorLiteral(v []float32) string {
 
 // Compile-time assertion that PGVectorProvider implements HybridSearcher.
 var _ HybridSearcher = (*PGVectorProvider)(nil)
+
+// projectLister is a local interface matching core.ProjectLister. We define
+// it here to avoid a circular import (pkg/core already imports pkg/rag).
+// The type assertion in core.Service.ListProjects checks for this method
+// dynamically, so any provider with a ListProjectIDs method will work.
+type projectLister interface {
+	ListProjectIDs(ctx context.Context) ([]string, error)
+}
+
+// Compile-time assertion that PGVectorProvider implements projectLister.
+var _ projectLister = (*PGVectorProvider)(nil)

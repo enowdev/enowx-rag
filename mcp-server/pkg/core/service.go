@@ -6,6 +6,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -98,10 +99,11 @@ func (b *EventBus) Publish(ev Event) {
 // Service wraps a provider, an optional reranker, and an indexer behind a
 // single API used by both the MCP stdio handlers and the HTTP API layer.
 type Service struct {
-	provider rag.Provider
-	reranker rag.Reranker // may be nil
-	indexer  *indexer.Indexer
-	events   *EventBus
+	provider   rag.Provider
+	reranker   rag.Reranker // may be nil
+	indexer    *indexer.Indexer
+	events     *EventBus
+	embedModel string // optional: set by main.go for stats endpoint
 }
 
 // NewService creates a Service from the given components. reranker may be nil.
@@ -125,6 +127,20 @@ func (s *Service) Events() *EventBus {
 // advanced use cases where the caller needs direct provider access.
 func (s *Service) Provider() rag.Provider {
 	return s.provider
+}
+
+// SetEmbedModel sets the embedding model name used by the service. This is
+// used by the HTTP API stats endpoint to report the active embedding model.
+func (s *Service) SetEmbedModel(model string) {
+	s.embedModel = model
+}
+
+// EmbedModel returns the embedding model name, or "unknown" if not set.
+func (s *Service) EmbedModel() string {
+	if s.embedModel != "" {
+		return s.embedModel
+	}
+	return "unknown"
 }
 
 // retrieveCandidates fetches recall candidates from the provider. When hybrid
@@ -354,18 +370,12 @@ func (s *Service) RetrieveContext(ctx context.Context, projectID, query string, 
 	for _, r := range results {
 		parts = append(parts, fmt.Sprintf("[score %.3f] %s", r.Score, r.Content))
 	}
-	return joinStrings(parts, "\n\n"), results, nil
+	return strings.Join(parts, "\n\n"), results, nil
 }
 
-// joinStrings is extracted to avoid importing strings just for one call,
-// keeping the service layer self-contained.
+// joinStrings is retained for backward compatibility but now delegates to
+// strings.Join. This avoids importing strings just for one call was the
+// original rationale, but using the stdlib is cleaner and more maintainable.
 func joinStrings(parts []string, sep string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	result := parts[0]
-	for _, p := range parts[1:] {
-		result += sep + p
-	}
-	return result
+	return strings.Join(parts, sep)
 }

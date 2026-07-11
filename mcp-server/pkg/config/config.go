@@ -105,6 +105,13 @@ func Save(c *Config) error {
 		return fmt.Errorf("write config file: %w", err)
 	}
 
+	// os.WriteFile only applies the mode when creating a new file. When
+	// overwriting an existing file the permissions are NOT changed, so we
+	// call os.Chmod to guarantee 0600 on every save.
+	if err := os.Chmod(Path(), 0600); err != nil {
+		return fmt.Errorf("chmod config file: %w", err)
+	}
+
 	return nil
 }
 
