@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a problem with enowx-rag
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to file a bug report!
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+      placeholder: When I run ... I expected ... but got ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Configure with ...
+        2. Run `rag_index` / `--serve` ...
+        3. See error ...
+    validations:
+      required: true
+  - type: dropdown
+    id: vector-store
+    attributes:
+      label: Vector store
+      options:
+        - qdrant
+        - chroma
+        - pgvector
+        - other / not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: embedder
+    attributes:
+      label: Embedder
+      options:
+        - voyage
+        - tei
+        - other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Go version, how you run the server (MCP stdio vs `--serve`), and relevant logs.
+      placeholder: macOS 15, Go 1.26, run via MCP stdio ...
+    validations:
+      required: false

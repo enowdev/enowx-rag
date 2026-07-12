@@ -1,5 +1,9 @@
 # enowx-rag
 
+[![CI](https://github.com/enowdev/enowx-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/enowdev/enowx-rag/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Go 1.26+](https://img.shields.io/badge/Go-1.26+-00ADD8.svg?logo=go)](mcp-server/go.mod)
+
 Per-project RAG memory MCP server. Each project gets its own vector collection, so an LLM can index context about a codebase and retrieve it quickly.
 
 The server runs in **two modes** from a single binary:

@@ -1,0 +1,46 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0] - 2026-07-12
+
+First tagged release. A per-project RAG memory skill and MCP server for AI
+coding agents, distributed as a single self-contained binary.
+
+### Added
+
+- **MCP server** (stdio) exposing per-project RAG tools: create/delete project,
+  index, retrieve context, semantic search.
+- **Vector store providers**: Qdrant, Chroma, and pgvector, behind a common
+  `rag.Provider` interface (one project = one collection).
+- **Embedding backends**: Voyage AI (with Matryoshka `output_dimension` and
+  `input_type=query`/`document` split) and self-hosted TEI.
+- **Reranking**: Voyage `rerank-2.5` integrated into search (retrieve → rerank →
+  top-k), disable-able and with graceful fallback.
+- **Hybrid search** on pgvector: dense + lexical full-text fused with
+  Reciprocal Rank Fusion (RRF, k=60) over a GIN `tsvector` index.
+- **HTTP + web UI** (`--serve`): chi-based REST API, Server-Sent Events activity
+  stream, and an embedded React dashboard (Overview, Playground, Chunks) served
+  from the single binary via `embed.FS`.
+- **Onboarding wizard**: guided setup for vector store, embedder, and connection
+  testing.
+- **Incremental indexing**: `content_hash` / `chunk_version` metadata so
+  unchanged chunks are skipped on re-index; `embed_model`/`embed_dim` recorded.
+- **Auth**: optional `RAG_ADMIN_TOKEN` protecting `/api/*` with constant-time
+  comparison.
+- **Packaging**: Makefile build pipeline and an all-in-one Docker Compose.
+
+### Security
+
+- SSE event stream (`/api/events`) is same-origin only by default; cross-origin
+  access must be explicitly enabled via `RAG_CORS_ORIGIN`.
+- Reranked result sets are defensively truncated to `k` regardless of the
+  rerank API response.
+
+[Unreleased]: https://github.com/enowdev/enowx-rag/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/enowdev/enowx-rag/releases/tag/v0.1.0
