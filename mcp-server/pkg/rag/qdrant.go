@@ -328,6 +328,36 @@ func (p *QdrantProvider) TokensUsed() int64 {
 	return 0
 }
 
+// ListProjectIDs returns the project IDs backed by this Qdrant instance by
+// listing collections and stripping the "project_" prefix. This implements the
+// core.ProjectLister interface so ListProjects/Stats and the dashboard work on
+// Qdrant, not only pgvector.
+//
+// Note: collection names are sanitized (see sanitize), which is lossy for
+// project IDs containing characters outside [A-Za-z0-9_-]. For such IDs the
+// returned value is the sanitized form. Common IDs (e.g. "enowx-rag") round-trip
+// exactly.
+func (p *QdrantProvider) ListProjectIDs(ctx context.Context) ([]string, error) {
+	var resp struct {
+		Result struct {
+			Collections []struct {
+				Name string `json:"name"`
+			} `json:"collections"`
+		} `json:"result"`
+	}
+	if err := p.do(ctx, http.MethodGet, "/collections", nil, &resp); err != nil {
+		return nil, fmt.Errorf("qdrant list collections: %w", err)
+	}
+	const prefix = "project_"
+	var ids []string
+	for _, c := range resp.Result.Collections {
+		if strings.HasPrefix(c.Name, prefix) {
+			ids = append(ids, strings.TrimPrefix(c.Name, prefix))
+		}
+	}
+	return ids, nil
+}
+
 func (p *QdrantProvider) do(ctx context.Context, method, path string, body any, out any) error {
 	var bodyReader io.Reader
 	if body != nil {

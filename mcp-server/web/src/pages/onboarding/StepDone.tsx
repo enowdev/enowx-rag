@@ -112,10 +112,12 @@ export function StepDone({ cfg, onBack, onComplete }: StepDoneProps) {
               <span className="sv mono">{cfg.teiURL}</span>
             </div>
           )}
-          <div className="summary-row">
-            <span className="sk">Reranker</span>
-            <span className="sv mono">rerank-2.5</span>
-          </div>
+          {cfg.embedder === 'voyage' && (
+            <div className="summary-row">
+              <span className="sk">Reranker</span>
+              <span className="sv mono">rerank-2.5</span>
+            </div>
+          )}
           <div className="summary-row">
             <span className="sk">Config path</span>
             <span className="sv mono">~/.enowx-rag/config.yaml</span>

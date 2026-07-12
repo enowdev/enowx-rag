@@ -123,12 +123,35 @@ type SemanticSearchInput struct {
 	ProjectID string `json:"project_id" jsonschema:"Project identifier"`
 	Query     string `json:"query" jsonschema:"Query text"`
 	Limit     int    `json:"limit" jsonschema:"Number of results to return (default 5)"`
+	Recall    int    `json:"recall" jsonschema:"Candidates retrieved before reranking (default 40)"`
+	Hybrid    *bool  `json:"hybrid" jsonschema:"Combine dense + lexical search when the backend supports it (default true)"`
+	Rerank    *bool  `json:"rerank" jsonschema:"Rerank candidates with the reranker when configured (default true)"`
+	Compress  bool   `json:"compress" jsonschema:"Drop near-duplicate results (default false)"`
 }
 
 type RetrieveContextInput struct {
 	ProjectID string `json:"project_id" jsonschema:"Project identifier"`
 	Query     string `json:"query" jsonschema:"Question or topic to retrieve context for"`
 	Limit     int    `json:"limit" jsonschema:"Number of chunks to retrieve (default 5)"`
+	Recall    int    `json:"recall" jsonschema:"Candidates retrieved before reranking (default 40)"`
+	Hybrid    *bool  `json:"hybrid" jsonschema:"Combine dense + lexical search when the backend supports it (default true)"`
+	Rerank    *bool  `json:"rerank" jsonschema:"Rerank candidates with the reranker when configured (default true)"`
+	Compress  bool   `json:"compress" jsonschema:"Drop near-duplicate results (default false)"`
+}
+
+// searchOptsFromMCP builds SearchOpts from MCP tool inputs. Hybrid and Rerank
+// default to true (nil pointer) so the built-in hybrid/rerank features are used
+// by default from MCP clients; they only take effect when the backend/reranker
+// supports them (otherwise Search falls back gracefully).
+func searchOptsFromMCP(limit, recall int, hybrid, rerank *bool, compress bool) core.SearchOpts {
+	b := func(p *bool) bool { return p == nil || *p }
+	return core.SearchOpts{
+		K:        limit,
+		Recall:   recall,
+		Hybrid:   b(hybrid),
+		Rerank:   b(rerank),
+		Compress: compress,
+	}
 }
 
 type ScanProjectInput struct {
@@ -259,7 +282,8 @@ func registerMCPTools(server *mcp.Server, svc *core.Service) {
 		Name:        "rag_semantic_search",
 		Description: "Semantic search over a project collection. Returns the most relevant chunks with similarity scores.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in SemanticSearchInput) (*mcp.CallToolResult, any, error) {
-		res, err := svc.Search(ctx, in.ProjectID, in.Query, core.SearchOpts{K: in.Limit, Recall: in.Limit})
+		opts := searchOptsFromMCP(in.Limit, in.Recall, in.Hybrid, in.Rerank, in.Compress)
+		res, err := svc.Search(ctx, in.ProjectID, in.Query, opts)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -270,7 +294,8 @@ func registerMCPTools(server *mcp.Server, svc *core.Service) {
 		Name:        "rag_retrieve_context",
 		Description: "Retrieve a compact context string for a project. Fetches top chunks and concatenates them for LLM context.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in RetrieveContextInput) (*mcp.CallToolResult, any, error) {
-		context, chunks, err := svc.RetrieveContext(ctx, in.ProjectID, in.Query, in.Limit)
+		opts := searchOptsFromMCP(in.Limit, in.Recall, in.Hybrid, in.Rerank, in.Compress)
+		context, chunks, err := svc.RetrieveContext(ctx, in.ProjectID, in.Query, opts)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -80,7 +80,7 @@ export function Playground({ activeProject, sharedQuery, onSharedQueryChange }: 
     } finally {
       setLoading(false)
     }
-  }, [activeProject, query, k, recall, hybrid, rerank])
+  }, [activeProject, query, k, recall, hybrid, rerank, compress])
 
   // Format activity events for display
   const activityRows = events.slice(0, 8).map((ev) => {

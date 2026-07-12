@@ -21,7 +21,10 @@ func NewRouter(svc *core.Service, ui fs.FS) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// NOTE: middleware.RealIP is intentionally NOT used. It rewrites
+	// r.RemoteAddr from client-controlled X-Forwarded-For / X-Real-IP headers,
+	// which would let a remote caller spoof a loopback address and bypass
+	// LocalOrAdminMiddleware's localhost check on the setup endpoints.
 
 	// API routes — protected by optional admin token middleware.
 	// When RAG_ADMIN_TOKEN is set, all /api/* endpoints require an
@@ -40,9 +43,15 @@ func NewRouter(svc *core.Service, ui fs.FS) http.Handler {
 		r.Get("/metrics", h.Metrics)
 		r.Get("/events", h.SSE)
 
-		// Setup wizard endpoints
-		r.Post("/setup/test", h.SetupTest)
-		r.Post("/setup/apply", h.SetupApply)
+		// Setup wizard endpoints. /setup/test and /setup/apply accept
+		// user-supplied backend credentials and write config.yaml (with API
+		// keys), so they are restricted to localhost or a valid admin token.
+		// /setup/status only reports whether a config exists, so it is open.
+		r.Group(func(r chi.Router) {
+			r.Use(LocalOrAdminMiddleware)
+			r.Post("/setup/test", h.SetupTest)
+			r.Post("/setup/apply", h.SetupApply)
+		})
 		r.Get("/setup/status", h.SetupStatus)
 
 		// Unknown /api/ routes return 404 JSON (not SPA fallback)

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"crypto/subtle"
+	"net"
 	"net/http"
 	"os"
 )
@@ -32,6 +33,41 @@ func AdminTokenMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// LocalOrAdminMiddleware protects sensitive write endpoints (e.g. the setup
+// wizard, which writes ~/.enowx-rag/config.yaml containing API keys). The
+// request is allowed when it originates from loopback (the common local-first
+// case) OR carries a valid RAG_ADMIN_TOKEN. A remote request without the token
+// is rejected, so an exposed instance cannot have its config rewritten or its
+// secrets probed by anonymous callers.
+func LocalOrAdminMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isLoopback(r.RemoteAddr) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		token := os.Getenv("RAG_ADMIN_TOKEN")
+		provided := extractBearerToken(r)
+		if token != "" && provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1 {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"error":"setup is restricted to localhost or requires a valid admin token"}`))
+	})
+}
+
+// isLoopback reports whether the request's remote address is a loopback IP.
+func isLoopback(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // extractBearerToken extracts the token from an Authorization header

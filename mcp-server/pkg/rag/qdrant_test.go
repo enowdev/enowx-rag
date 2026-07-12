@@ -140,3 +140,42 @@ func TestQdrantSemanticSearchEmbedQueryError(t *testing.T) {
 		t.Fatal("expected error from EmbedQuery failure")
 	}
 }
+
+// TestQdrantListProjectIDs verifies that ListProjectIDs lists collections and
+// strips the "project_" prefix, implementing core.ProjectLister for Qdrant.
+func TestQdrantListProjectIDs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/collections" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"result":{"collections":[{"name":"project_enowx-rag"},{"name":"project_demo"},{"name":"other_thing"}]}}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	p, err := NewQdrantProvider(context.Background(), srv.URL, "", &mockQueryEmbedder{})
+	if err != nil {
+		t.Fatalf("NewQdrantProvider: %v", err)
+	}
+	defer p.Close()
+
+	ids, err := p.ListProjectIDs(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjectIDs: %v", err)
+	}
+	// Only project_-prefixed collections, prefix stripped; "other_thing" excluded.
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 project IDs, got %d: %v", len(ids), ids)
+	}
+	want := map[string]bool{"enowx-rag": true, "demo": true}
+	for _, id := range ids {
+		if !want[id] {
+			t.Errorf("unexpected project ID %q", id)
+		}
+	}
+}

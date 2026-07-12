@@ -246,6 +246,28 @@ func (p *ChromaProvider) ListPoints(ctx context.Context, projectID string, metaF
 
 func (p *ChromaProvider) Close() error { return nil }
 
+// ListProjectIDs returns the project IDs backed by this Chroma instance by
+// listing collections and stripping the "project_" prefix. Implements the
+// core.ProjectLister interface so ListProjects/Stats and the dashboard work on
+// Chroma, not only pgvector. Collection names are sanitized (lossy for IDs with
+// characters outside [A-Za-z0-9_-]); common IDs round-trip exactly.
+func (p *ChromaProvider) ListProjectIDs(ctx context.Context) ([]string, error) {
+	var collections []struct {
+		Name string `json:"name"`
+	}
+	if err := p.do(ctx, http.MethodGet, "/api/v1/collections", nil, &collections); err != nil {
+		return nil, fmt.Errorf("chroma list collections: %w", err)
+	}
+	const prefix = "project_"
+	var ids []string
+	for _, c := range collections {
+		if strings.HasPrefix(c.Name, prefix) {
+			ids = append(ids, strings.TrimPrefix(c.Name, prefix))
+		}
+	}
+	return ids, nil
+}
+
 // TokensUsed forwards the embedder's cumulative token count when the embedder
 // tracks it (e.g. Voyage), so core.Service can report embed tokens without
 // direct embedder access. Returns 0 for embedders that don't (e.g. TEI).

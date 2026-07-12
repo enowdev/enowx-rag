@@ -136,3 +136,32 @@ func TestChromaSemanticSearchReturnsResults(t *testing.T) {
 		t.Errorf("expected first result meta source_file 'file1.go', got '%s'", results[0].Meta["source_file"])
 	}
 }
+
+// TestChromaListProjectIDs verifies that ListProjectIDs lists collections and
+// strips the "project_" prefix, implementing core.ProjectLister for Chroma.
+func TestChromaListProjectIDs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/collections" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[{"name":"project_alpha"},{"name":"project_beta"},{"name":"internal"}]`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	p := NewChromaProvider(srv.URL, &mockQueryEmbedder{})
+	ids, err := p.ListProjectIDs(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjectIDs: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 project IDs, got %d: %v", len(ids), ids)
+	}
+	want := map[string]bool{"alpha": true, "beta": true}
+	for _, id := range ids {
+		if !want[id] {
+			t.Errorf("unexpected project ID %q", id)
+		}
+	}
+}

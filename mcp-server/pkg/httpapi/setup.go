@@ -134,10 +134,11 @@ func (h *Handlers) SetupApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Do not echo the config back — it contains secrets (e.g. Voyage API key).
+	// Return only the non-sensitive outcome.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":   "saved",
-		"path":     config.Path(),
-		"config":   cfg,
+		"status": "saved",
+		"path":   config.Path(),
 	})
 }
 

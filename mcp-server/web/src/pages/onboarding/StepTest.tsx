@@ -138,7 +138,7 @@ export function StepTest({ cfg, testResults, setTestResults, testPassed, onBack,
         <button
           className="btn primary"
           onClick={onNext}
-          disabled={!hasResults || (!testPassed && !hasResults)}
+          disabled={!hasResults}
         >
           {testPassed ? 'Next' : 'Proceed Anyway'} <ChevronRight size={14} />
         </button>

@@ -649,7 +649,7 @@ func TestRetrieveContext(t *testing.T) {
 	p := &mockProvider{}
 	svc := NewService(p, nil, nil)
 
-	ctxStr, results, err := svc.RetrieveContext(context.Background(), "proj1", "query", 3)
+	ctxStr, results, err := svc.RetrieveContext(context.Background(), "proj1", "query", SearchOpts{K: 3})
 	if err != nil {
 		t.Fatalf("RetrieveContext error: %v", err)
 	}
@@ -667,7 +667,7 @@ func TestRetrieveContextDefaultLimit(t *testing.T) {
 	p := &mockProvider{}
 	svc := NewService(p, nil, nil)
 
-	_, results, err := svc.RetrieveContext(context.Background(), "proj1", "query", 0)
+	_, results, err := svc.RetrieveContext(context.Background(), "proj1", "query", SearchOpts{K: 0})
 	if err != nil {
 		t.Fatalf("RetrieveContext error: %v", err)
 	}

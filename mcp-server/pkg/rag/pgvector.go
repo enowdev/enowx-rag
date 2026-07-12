@@ -263,7 +263,9 @@ lexical AS (
 SELECT COALESCE(d.id, l.id) AS id,
        COALESCE(d.content, l.content) AS content,
        COALESCE(d.metadata, l.metadata) AS metadata,
-       (COALESCE(1.0/(60+d.rank), 0) + COALESCE(1.0/(60+l.rank), 0)) AS score
+       (COALESCE(1.0/(60+d.rank), 0) + COALESCE(1.0/(60+l.rank), 0)) AS score,
+       (d.id IS NOT NULL) AS in_dense,
+       (l.id IS NOT NULL) AS in_lexical
 FROM dense d
 FULL OUTER JOIN lexical l ON d.id = l.id
 ORDER BY score DESC
@@ -279,7 +281,7 @@ LIMIT $3
 	for rows.Next() {
 		var r Result
 		var meta map[string]string
-		if err := rows.Scan(&r.ID, &r.Content, &meta, &r.Score); err != nil {
+		if err := rows.Scan(&r.ID, &r.Content, &meta, &r.Score, &r.InDense, &r.InLexical); err != nil {
 			return nil, err
 		}
 		r.Meta = meta

@@ -135,6 +135,7 @@ func TestSetupStatus_Transitions(t *testing.T) {
 	// Step 2: apply config.
 	applyBody := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"test-key","qdrant_url":"http://localhost:6333"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(applyBody))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -169,6 +170,7 @@ func TestSetupApply_SavesConfigWith0600(t *testing.T) {
 
 	body := `{"vector_store":"pgvector","embedder":"voyage","voyage_api_key":"secret-key","voyage_model":"voyage-4","voyage_dim":1024,"pgvector_dsn":"postgresql://enowdev@localhost:5432/enowxrag"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -212,6 +214,7 @@ func TestSetupApply_WritesValidYAML(t *testing.T) {
 
 	body := `{"vector_store":"pgvector","embedder":"voyage","voyage_api_key":"my-key","voyage_model":"voyage-4","voyage_dim":1024,"pgvector_dsn":"postgresql://enowdev@localhost:5432/enowxrag","qdrant_url":"http://localhost:6333","reranker_model":"rerank-2.5"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -255,6 +258,7 @@ func TestSetupApply_MissingVectorStore(t *testing.T) {
 
 	body := `{"embedder":"voyage"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -277,6 +281,7 @@ func TestSetupApply_InvalidJSON(t *testing.T) {
 	_, router := newTestServer(t, p, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader("not json"))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -306,6 +311,7 @@ func TestSetupApply_OverwritesExisting(t *testing.T) {
 
 	body := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"new-key","qdrant_url":"http://localhost:6333"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -366,6 +372,7 @@ func TestSetupTest_QdrantSuccess(t *testing.T) {
 
 	body := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"test-key","qdrant_url":"` + qdrantSrv.URL + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -404,6 +411,7 @@ func TestSetupTest_QdrantFail(t *testing.T) {
 	// Use a port that's almost certainly not listening.
 	body := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"test-key","qdrant_url":"http://127.0.0.1:59999"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -434,6 +442,7 @@ func TestSetupTest_PGVectorSuccess(t *testing.T) {
 	// Use the real local PostgreSQL that's running per the mission setup.
 	body := `{"vector_store":"pgvector","embedder":"voyage","voyage_api_key":"test-key","pgvector_dsn":"postgresql://enowdev@localhost:5432/enowxrag"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -460,6 +469,7 @@ func TestSetupTest_PGVectorFail(t *testing.T) {
 
 	body := `{"vector_store":"pgvector","embedder":"voyage","voyage_api_key":"test-key","pgvector_dsn":"postgresql://user@127.0.0.1:59999/nonexistent"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -490,6 +500,7 @@ func TestSetupTest_MissingFields(t *testing.T) {
 	// Missing vector_store.
 	body := `{"embedder":"voyage"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -500,6 +511,7 @@ func TestSetupTest_MissingFields(t *testing.T) {
 	// Missing embedder.
 	body = `{"vector_store":"qdrant"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -515,6 +527,7 @@ func TestSetupTest_InvalidJSON(t *testing.T) {
 	_, router := newTestServer(t, p, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader("not json"))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -538,6 +551,7 @@ func TestSetupTest_ReturnsLatency(t *testing.T) {
 
 	body := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"test-key","qdrant_url":"` + qdrantSrv.URL + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -565,6 +579,7 @@ func TestSetupTest_UnsupportedVectorStore(t *testing.T) {
 
 	body := `{"vector_store":"redis","embedder":"voyage","voyage_api_key":"test-key"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -628,5 +643,49 @@ func TestParsePGDSN_Empty(t *testing.T) {
 	}
 	if port != "5432" {
 		t.Errorf("port = %q, want %q", port, "5432")
+	}
+}
+
+// TestSetupApply_RemoteRejectedWithoutToken verifies that a non-loopback
+// request to /api/setup/apply is rejected (403) when no admin token is set,
+// so an exposed instance cannot have its config rewritten anonymously.
+func TestSetupApply_RemoteRejectedWithoutToken(t *testing.T) {
+	t.Setenv("RAG_ADMIN_TOKEN", "")
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"secret"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(body))
+	req.RemoteAddr = "203.0.113.7:5555" // non-loopback
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("remote setup/apply without token = %d, want 403", w.Code)
+	}
+}
+
+// TestSetupApply_RemoteAllowedWithToken verifies that a non-loopback request
+// with a valid admin token is allowed through the gate.
+func TestSetupApply_RemoteAllowedWithToken(t *testing.T) {
+	t.Setenv("RAG_ADMIN_TOKEN", "s3cret")
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"k"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(body))
+	req.RemoteAddr = "203.0.113.7:5555"
+	req.Header.Set("Authorization", "Bearer s3cret")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("remote setup/apply with valid token = %d, want 200", w.Code)
+	}
+	// Response must NOT leak the API key back.
+	if strings.Contains(w.Body.String(), "\"k\"") || strings.Contains(w.Body.String(), "voyage_api_key") {
+		t.Errorf("setup/apply response leaked config/secret: %s", w.Body.String())
 	}
 }

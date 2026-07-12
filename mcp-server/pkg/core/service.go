@@ -109,10 +109,12 @@ type Service struct {
 	backend    string // vector store name (e.g. "qdrant"), set by main.go
 }
 
-// MetricsStore is an optional interface implemented only by backends that can
-// persist query metrics durably (currently pgvector). Service type-asserts the
-// provider for this interface; when absent, metrics are in-memory only and the
-// snapshot reports Persistent=false — an honest capability signal.
+// MetricsStore is an optional interface a provider may implement to persist
+// query metrics durably. No provider implements it yet: a vector-store provider
+// lives in package rag, which cannot import core (that would be an import
+// cycle), so durable persistence will require a separate persister injected
+// into Service rather than a provider method. Until then Service type-asserts
+// the provider here and, finding nothing, reports Persistent=false honestly.
 type MetricsStore interface {
 	PersistQueryMetric(ctx context.Context, latencyMs float64, comp QueryComposition) error
 }
@@ -558,11 +560,11 @@ func (s *Service) IndexDocuments(ctx context.Context, projectID string, docs []r
 
 // RetrieveContext performs a semantic search and returns a concatenated
 // context string suitable for feeding into an LLM, along with the raw results.
-func (s *Service) RetrieveContext(ctx context.Context, projectID, query string, limit int) (string, []rag.Result, error) {
-	if limit <= 0 {
-		limit = DefaultK
+func (s *Service) RetrieveContext(ctx context.Context, projectID, query string, opts SearchOpts) (string, []rag.Result, error) {
+	if opts.K <= 0 {
+		opts.K = DefaultK
 	}
-	results, err := s.Search(ctx, projectID, query, SearchOpts{K: limit, Recall: limit})
+	results, err := s.Search(ctx, projectID, query, opts)
 	if err != nil {
 		return "", nil, err
 	}
@@ -571,11 +573,4 @@ func (s *Service) RetrieveContext(ctx context.Context, projectID, query string, 
 		parts = append(parts, fmt.Sprintf("[score %.3f] %s", r.Score, r.Content))
 	}
 	return strings.Join(parts, "\n\n"), results, nil
-}
-
-// joinStrings is retained for backward compatibility but now delegates to
-// strings.Join. This avoids importing strings just for one call was the
-// original rationale, but using the stdlib is cleaner and more maintainable.
-func joinStrings(parts []string, sep string) string {
-	return strings.Join(parts, sep)
 }
