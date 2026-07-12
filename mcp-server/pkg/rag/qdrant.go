@@ -318,6 +318,16 @@ func pointID(raw string) string {
 
 func (p *QdrantProvider) Close() error { return nil }
 
+// TokensUsed forwards the embedder's cumulative token count when the embedder
+// tracks it (e.g. Voyage), so core.Service can report embed tokens without
+// direct embedder access. Returns 0 for embedders that don't (e.g. TEI).
+func (p *QdrantProvider) TokensUsed() int64 {
+	if tc, ok := p.embedder.(TokenCounter); ok {
+		return tc.TokensUsed()
+	}
+	return 0
+}
+
 func (p *QdrantProvider) do(ctx context.Context, method, path string, body any, out any) error {
 	var bodyReader io.Reader
 	if body != nil {

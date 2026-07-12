@@ -352,6 +352,77 @@ func TestSearchRerankClampsToK(t *testing.T) {
 	}
 }
 
+// TestSearchRecordsMetrics verifies that Search records a query into the
+// in-memory metrics and that MetricsSnapshot reflects it.
+func TestSearchRecordsMetrics(t *testing.T) {
+	p := &mockProvider{}
+	svc := NewService(p, nil, nil)
+	svc.SetBackend("qdrant")
+
+	snap0 := svc.MetricsSnapshot(context.Background())
+	if snap0.QueryCount != 0 || snap0.LastQuery != nil {
+		t.Fatalf("before search: count=%d lastQuery=%v, want 0/nil", snap0.QueryCount, snap0.LastQuery)
+	}
+	if snap0.Backend != "qdrant" {
+		t.Errorf("backend = %q, want qdrant", snap0.Backend)
+	}
+	if snap0.Persistent {
+		t.Error("mock provider must not be Persistent")
+	}
+
+	if _, err := svc.Search(context.Background(), "proj", "query", SearchOpts{K: 3, Recall: 10}); err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+
+	snap := svc.MetricsSnapshot(context.Background())
+	if snap.QueryCount != 1 {
+		t.Errorf("query_count = %d, want 1", snap.QueryCount)
+	}
+	if snap.LastQuery == nil {
+		t.Fatal("last_query should be populated after a search")
+	}
+	if snap.LastQuery.Results != 3 {
+		t.Errorf("last_query.Results = %d, want 3", snap.LastQuery.Results)
+	}
+}
+
+// TestSearchCompressDedup verifies that Compress drops near-duplicate results
+// (identical content_hash or identical content) while preserving order.
+func TestSearchCompressDedup(t *testing.T) {
+	p := &mockProvider{results: []rag.Result{
+		{ID: "1", Content: "alpha", Score: 0.9, Meta: map[string]string{"content_hash": "h1"}},
+		{ID: "2", Content: "beta", Score: 0.8, Meta: map[string]string{"content_hash": "h1"}}, // dup hash
+		{ID: "3", Content: "gamma", Score: 0.7, Meta: map[string]string{"content_hash": "h2"}},
+		{ID: "4", Content: "gamma", Score: 0.6, Meta: map[string]string{"content_hash": "h3"}}, // dup content
+		{ID: "5", Content: "delta", Score: 0.5, Meta: map[string]string{"content_hash": "h4"}},
+	}}
+	svc := NewService(p, nil, nil)
+
+	// Without compress: all 5 (K high enough).
+	plain, err := svc.Search(context.Background(), "proj", "q", SearchOpts{K: 10, Recall: 10})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(plain) != 5 {
+		t.Fatalf("without compress: got %d, want 5", len(plain))
+	}
+
+	// With compress: drop id 2 (dup hash h1) and id 4 (dup content "gamma") → 3 left.
+	compressed, err := svc.Search(context.Background(), "proj", "q", SearchOpts{K: 10, Recall: 10, Compress: true})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(compressed) != 3 {
+		t.Fatalf("with compress: got %d, want 3", len(compressed))
+	}
+	wantIDs := []string{"1", "3", "5"}
+	for i, r := range compressed {
+		if r.ID != wantIDs[i] {
+			t.Errorf("compressed[%d].ID = %q, want %q (order must be preserved)", i, r.ID, wantIDs[i])
+		}
+	}
+}
+
 // TestSearchRerankerErrorFallback verifies that if the reranker returns an
 // error, Search falls back to semantic order (no error propagated).
 func TestSearchRerankerErrorFallback(t *testing.T) {

@@ -12,11 +12,19 @@ type Document struct {
 }
 
 // Result is a retrieved chunk with its similarity score.
+//
+// InDense/InLexical are optional origin flags populated only by the hybrid
+// pgvector path (SemanticSearchHybrid); they indicate whether the result
+// appeared in the dense and/or lexical ranking before RRF fusion. Other
+// backends and the dense-only path leave them false. They are additive and
+// omitempty, so existing consumers are unaffected.
 type Result struct {
-	ID      string            `json:"id"`
-	Content string            `json:"content"`
-	Score   float64           `json:"score"`
-	Meta    map[string]string `json:"meta,omitempty"`
+	ID        string            `json:"id"`
+	Content   string            `json:"content"`
+	Score     float64           `json:"score"`
+	Meta      map[string]string `json:"meta,omitempty"`
+	InDense   bool              `json:"in_dense,omitempty"`
+	InLexical bool              `json:"in_lexical,omitempty"`
 }
 
 // Provider describes a RAG backend capable of per-project collections.
@@ -69,6 +77,18 @@ type QueryEmbedder interface {
 // metadata before persisting.
 type ModelNamer interface {
 	ModelName() string
+}
+
+// TokenCounter is an optional interface implemented by embedding clients and
+// rerankers that track cumulative token usage reported by their upstream API
+// (e.g. Voyage AI returns usage.total_tokens). core.Service type-asserts the
+// provider and reranker for this interface to report token metrics; backends
+// that cannot report tokens (e.g. TEI) simply do not implement it, and the
+// metrics layer reports zero honestly. Providers may forward to their
+// embedder's counter when the embedder implements this interface.
+type TokenCounter interface {
+	// TokensUsed returns the total tokens consumed since process start.
+	TokensUsed() int64
 }
 
 // HybridSearcher is an optional interface for providers that support hybrid

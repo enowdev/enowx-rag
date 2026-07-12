@@ -233,3 +233,29 @@ func TestVoyageInputType(t *testing.T) {
 		t.Errorf("EmbedQuery input_type = %q, want %q", it, "query")
 	}
 }
+
+// TestVoyageEmbeddingTokensUsed verifies that VoyageEmbeddingClient accumulates
+// usage.total_tokens across (possibly batched) embed calls and exposes it via
+// TokensUsed() (implements TokenCounter).
+func TestVoyageEmbeddingTokensUsed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":[{"index":0,"embedding":[0.1,0.2]}],"usage":{"total_tokens":11}}`))
+	}))
+	defer server.Close()
+
+	c := NewVoyageEmbeddingClient("key", "voyage-4", 2)
+	c.baseURL = server.URL
+
+	if got := c.TokensUsed(); got != 0 {
+		t.Fatalf("TokensUsed before any call = %d, want 0", got)
+	}
+	if _, err := c.Embed(context.Background(), []string{"hello"}); err != nil {
+		t.Fatalf("Embed failed: %v", err)
+	}
+	if _, err := c.EmbedQuery(context.Background(), "world"); err != nil {
+		t.Fatalf("EmbedQuery failed: %v", err)
+	}
+	if got := c.TokensUsed(); got != 22 {
+		t.Errorf("TokensUsed after embed+query = %d, want 22", got)
+	}
+}

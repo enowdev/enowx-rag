@@ -215,3 +215,28 @@ func TestVoyageRerankerContentTypeHeader(t *testing.T) {
 		t.Errorf("Content-Type = %q, want %q", capturedContentType, "application/json")
 	}
 }
+
+// TestVoyageRerankerTokensUsed verifies that VoyageReranker accumulates the
+// usage.total_tokens reported by the API across calls, exposing it via
+// TokensUsed() (implements TokenCounter).
+func TestVoyageRerankerTokensUsed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return raw JSON so the anonymous usage struct is populated on decode.
+		w.Write([]byte(`{"data":[{"index":0,"relevance_score":0.9}],"usage":{"total_tokens":17}}`))
+	}))
+	defer server.Close()
+
+	rr := NewVoyageReranker("key", "")
+	rr.baseURL = server.URL
+
+	if got := rr.TokensUsed(); got != 0 {
+		t.Fatalf("TokensUsed before any call = %d, want 0", got)
+	}
+	_, _ = rr.Rerank(context.Background(), "q", []string{"a", "b"}, 2)
+	_, _ = rr.Rerank(context.Background(), "q", []string{"a", "b"}, 2)
+	if got := rr.TokensUsed(); got != 34 {
+		t.Errorf("TokensUsed after 2 calls = %d, want 34", got)
+	}
+}
+
+var _ TokenCounter = (*VoyageReranker)(nil)

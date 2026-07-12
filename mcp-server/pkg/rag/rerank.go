@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,6 +25,7 @@ type VoyageReranker struct {
 	Model   string // defaults to "rerank-2.5"
 	client  *http.Client
 	baseURL string // override for testing; defaults to voyageRerankURL
+	tokens  atomic.Int64 // cumulative total_tokens reported by the API
 }
 
 // NewVoyageReranker creates a VoyageReranker with the given API key.
@@ -49,7 +51,10 @@ type voyageRerankRequest struct {
 
 // voyageRerankResponse is the JSON response from the Voyage rerank API.
 type voyageRerankResponse struct {
-	Data []RerankHit `json:"data"`
+	Data  []RerankHit `json:"data"`
+	Usage struct {
+		TotalTokens int64 `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Rerank sends the query and documents to the Voyage AI rerank API and
@@ -97,9 +102,17 @@ func (r *VoyageReranker) Rerank(ctx context.Context, query string, docs []string
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode voyage rerank response: %w", err)
 	}
+	r.tokens.Add(result.Usage.TotalTokens)
 
 	return result.Data, nil
 }
 
-// Compile-time assertion that VoyageReranker implements Reranker.
+// TokensUsed returns the cumulative total_tokens reported by the Voyage rerank
+// API since this reranker was created. Implements TokenCounter.
+func (r *VoyageReranker) TokensUsed() int64 {
+	return r.tokens.Load()
+}
+
+// Compile-time assertions.
 var _ Reranker = (*VoyageReranker)(nil)
+var _ TokenCounter = (*VoyageReranker)(nil)

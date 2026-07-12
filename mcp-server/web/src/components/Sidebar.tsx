@@ -30,22 +30,9 @@ export function Sidebar({ page, onNavigate, projects, activeProject, onSelectPro
       setLocalProjects(projs)
       onProjectsLoaded(projs)
     }).catch(() => {
-      // API not available yet, use mock data for UI rendering
-      if (localProjects.length === 0) {
-        const mock: ProjectInfo[] = [
-          { projectID: 'enowx-rag', chunkCount: 76 },
-          { projectID: 'robloxkit', chunkCount: 2140 },
-          { projectID: 'enowxreality', chunkCount: 1883 },
-          { projectID: 'reality-client-rs', chunkCount: 642 },
-          { projectID: 'antaresban', chunkCount: 508 },
-          { projectID: 'pixelify', chunkCount: 431 },
-          { projectID: 'enowxai', chunkCount: 377 },
-          { projectID: 'enowx-discord', chunkCount: 294 },
-          { projectID: 'reality-auto-login', chunkCount: 210 },
-        ]
-        setLocalProjects(mock)
-        onProjectsLoaded(mock)
-      }
+      // API unavailable: show an empty project list rather than fabricated data.
+      setLocalProjects([])
+      onProjectsLoaded([])
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -58,22 +45,9 @@ export function Sidebar({ page, onNavigate, projects, activeProject, onSelectPro
       onProjectsLoaded(projs)
     }).catch(() => {
       if (cancelled) return
-      // API not available yet, use mock data for UI rendering
-      if (localProjects.length === 0) {
-        const mock: ProjectInfo[] = [
-          { projectID: 'enowx-rag', chunkCount: 76 },
-          { projectID: 'robloxkit', chunkCount: 2140 },
-          { projectID: 'enowxreality', chunkCount: 1883 },
-          { projectID: 'reality-client-rs', chunkCount: 642 },
-          { projectID: 'antaresban', chunkCount: 508 },
-          { projectID: 'pixelify', chunkCount: 431 },
-          { projectID: 'enowxai', chunkCount: 377 },
-          { projectID: 'enowx-discord', chunkCount: 294 },
-          { projectID: 'reality-auto-login', chunkCount: 210 },
-        ]
-        setLocalProjects(mock)
-        onProjectsLoaded(mock)
-      }
+      // API unavailable: show an empty project list rather than fabricated data.
+      setLocalProjects([])
+      onProjectsLoaded([])
     })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -114,24 +88,21 @@ export function Sidebar({ page, onNavigate, projects, activeProject, onSelectPro
 
       <div className="nav-label">Projects</div>
       <div className="proj-list">
-        {displayProjects.map((p) => (
-          <div
-            key={p.projectID}
-            className={`proj ${activeProject === p.projectID ? 'active' : ''}`}
-            onClick={() => onSelectProject(p.projectID)}
-          >
-            <span className="status-dot" style={{ background: 'var(--good)' }} />
-            <span className="proj-name mono">{p.projectID}</span>
-            <span className="count tnum">{p.chunkCount.toLocaleString()}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="sidebar-foot">
-        <div className="nav-item">
-          <Settings size={15} strokeWidth={1.6} />
-          Settings
-        </div>
+        {displayProjects.length === 0 ? (
+          <div className="proj-empty">No projects indexed yet.</div>
+        ) : (
+          displayProjects.map((p) => (
+            <div
+              key={p.projectID}
+              className={`proj ${activeProject === p.projectID ? 'active' : ''}`}
+              onClick={() => onSelectProject(p.projectID)}
+            >
+              <span className="status-dot" style={{ background: 'var(--good)' }} />
+              <span className="proj-name mono">{p.projectID}</span>
+              <span className="count tnum">{p.chunkCount.toLocaleString()}</span>
+            </div>
+          ))
+        )}
       </div>
     </aside>
   )

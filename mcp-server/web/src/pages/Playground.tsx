@@ -71,6 +71,7 @@ export function Playground({ activeProject, sharedQuery, onSharedQueryChange }: 
         recall,
         hybrid,
         rerank,
+        compress,
       })
       setResults(resp.results)
     } catch (err) {

@@ -137,6 +137,14 @@ type ScanProjectInput struct {
 }
 
 func main() {
+	// Subcommand dispatch (must run before flag.Parse, which only handles the
+	// default mode's flags). `enowx-rag setup [--run]` generates/runs the
+	// docker-compose backend from the command line — never over HTTP.
+	if len(os.Args) > 1 && os.Args[1] == "setup" {
+		runSetup(os.Args[2:])
+		return
+	}
+
 	serve := flag.Bool("serve", false, "run HTTP+UI server instead of stdio MCP")
 	addr := flag.String("addr", ":7777", "HTTP listen address (only used with --serve)")
 	flag.Parse()
@@ -168,6 +176,7 @@ func main() {
 
 	svc := buildService(provider, reranker, idx)
 	svc.SetEmbedModel(cfg.VoyageModel)
+	svc.SetBackend(cfg.VectorStore)
 
 	if *serve {
 		runHTTP(svc, *addr, cfg)

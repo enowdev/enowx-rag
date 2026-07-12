@@ -7,7 +7,7 @@ interface StepWelcomeProps {
 
 interface EnvCheck {
   label: string
-  status: 'ok' | 'fail' | 'checking'
+  status: 'ok' | 'fail' | 'checking' | 'unknown'
   detail: string
 }
 
@@ -85,46 +85,27 @@ export function StepWelcome({ onNext }: StepWelcomeProps) {
   )
 }
 
+// Docker and PostgreSQL cannot be probed from a browser (no raw TCP, no shell).
+// Rather than report a misleading "available", we say so honestly and point the
+// user at the CLI (`enowx-rag setup --run`), which verifies them for real.
 async function checkDocker(): Promise<EnvCheck> {
-  // We can't run `docker info` from the browser. We'll do a best-effort
-  // check by seeing if any Docker-related service is reachable.
-  // The actual Docker availability will be confirmed during auto-setup.
-  // For the mockup parity, we check if the API is reachable (server runs
-  // which implies the environment is set up).
-  try {
-    const resp = await fetch('/api/stats', { signal: AbortSignal.timeout(3000) })
-    if (resp.ok) {
-      return { label: 'Docker', status: 'ok', detail: 'available' }
-    }
-    return { label: 'Docker', status: 'fail', detail: 'not detected' }
-  } catch {
-    return { label: 'Docker', status: 'fail', detail: 'not detected' }
-  }
+  return { label: 'Docker', status: 'unknown', detail: 'verify via CLI' }
 }
 
 async function checkPostgres(): Promise<EnvCheck> {
-  try {
-    const resp = await fetch('/api/stats', { signal: AbortSignal.timeout(3000) })
-    if (resp.ok) {
-      const data = await resp.json()
-      const model = data.embed_model || 'unknown'
-      return { label: 'PostgreSQL (:5432)', status: 'ok', detail: `:5432 · ${model}` }
-    }
-    return { label: 'PostgreSQL (:5432)', status: 'fail', detail: ':5432 — not running' }
-  } catch {
-    return { label: 'PostgreSQL (:5432)', status: 'fail', detail: ':5432 — not running' }
-  }
+  return { label: 'PostgreSQL (:5432)', status: 'unknown', detail: 'verify via CLI' }
 }
 
+// checkPort attempts a real reachability check for HTTP services (Qdrant/TEI
+// expose health endpoints). no-cors resolves opaquely when the port is open.
 async function checkPort(label: string, _port: number, url: string): Promise<EnvCheck> {
   try {
     const resp = await fetch(url, { signal: AbortSignal.timeout(3000), mode: 'no-cors' })
-    // no-cors mode resolves even if the server returns non-200
     if (resp.type === 'opaque' || resp.ok) {
-      return { label, status: 'ok', detail: `:${_port} — running` }
+      return { label, status: 'ok', detail: `:${_port} — reachable` }
     }
-    return { label, status: 'fail', detail: `:${_port} — not running` }
+    return { label, status: 'fail', detail: `:${_port} — not reachable` }
   } catch {
-    return { label, status: 'fail', detail: `:${_port} — not running` }
+    return { label, status: 'fail', detail: `:${_port} — not reachable` }
   }
 }

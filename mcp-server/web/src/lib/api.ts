@@ -33,6 +33,30 @@ export interface SearchRequest {
   recall?: number
   hybrid?: boolean
   rerank?: boolean
+  compress?: boolean
+}
+
+export interface QueryComposition {
+  hybrid: boolean
+  reranked: boolean
+  candidates: number
+  results: number
+  dense_count: number
+  lexical_count: number
+  rerank_moved: number
+}
+
+export interface MetricsResponse {
+  query_count: number
+  avg_latency_ms: number
+  p50_latency_ms: number
+  p95_latency_ms: number
+  tokens_total: number
+  tokens_embed: number
+  tokens_rerank: number
+  persistent: boolean
+  backend: string
+  last_query?: QueryComposition
 }
 
 export interface StatsResponse {
@@ -137,6 +161,8 @@ export const api = {
     }),
 
   stats: () => fetchJSON<StatsResponse>(`${API_BASE}/stats`),
+
+  metrics: () => fetchJSON<MetricsResponse>(`${API_BASE}/metrics`),
 
   setupStatus: () => fetchJSON<SetupStatus>(`${API_BASE}/setup/status`),
 

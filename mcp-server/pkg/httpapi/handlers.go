@@ -217,6 +217,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		Recall    int    `json:"recall"`
 		Hybrid    bool   `json:"hybrid"`
 		Rerank    bool   `json:"rerank"`
+		Compress  bool   `json:"compress"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body")
@@ -239,10 +240,11 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	results, err := h.svc.Search(r.Context(), req.ProjectID, req.Query, core.SearchOpts{
-		K:      req.K,
-		Recall: req.Recall,
-		Hybrid: req.Hybrid,
-		Rerank: req.Rerank,
+		K:        req.K,
+		Recall:   req.Recall,
+		Hybrid:   req.Hybrid,
+		Rerank:   req.Rerank,
+		Compress: req.Compress,
 	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -279,4 +281,12 @@ func (h *Handlers) Stats(w http.ResponseWriter, r *http.Request) {
 		"embed_model":    embedModel,
 		"projects":       stats,
 	})
+}
+
+// Metrics handles GET /api/metrics.
+// Returns in-memory query metrics (latency aggregates, query count), token
+// usage read from the provider/reranker when available, and capability flags
+// (backend name, whether metrics are persisted).
+func (h *Handlers) Metrics(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.svc.MetricsSnapshot(r.Context()))
 }

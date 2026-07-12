@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,6 +23,7 @@ type VoyageEmbeddingClient struct {
 	Dim     int // 0 = default 1024
 	client  *http.Client
 	baseURL string // override for testing; defaults to voyageAPIURL
+	tokens  atomic.Int64 // cumulative total_tokens reported by the API
 }
 
 // NewVoyageEmbeddingClient creates a Voyage AI embedding client.
@@ -54,6 +56,9 @@ type voyageResponse struct {
 		Embedding []float32 `json:"embedding"`
 		Index     int       `json:"index"`
 	} `json:"data"`
+	Usage struct {
+		TotalTokens int64 `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Embed returns one embedding per input text.
@@ -128,6 +133,7 @@ func (c *VoyageEmbeddingClient) embedBatch(ctx context.Context, texts []string, 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode voyage response: %w", err)
 	}
+	c.tokens.Add(result.Usage.TotalTokens)
 
 	vecs := make([][]float32, len(texts))
 	for _, d := range result.Data {
@@ -150,3 +156,11 @@ func (c *VoyageEmbeddingClient) VectorSize() int {
 	}
 	return 1024
 }
+
+// TokensUsed returns the cumulative total_tokens reported by the Voyage
+// embeddings API since this client was created. Implements TokenCounter.
+func (c *VoyageEmbeddingClient) TokensUsed() int64 {
+	return c.tokens.Load()
+}
+
+var _ TokenCounter = (*VoyageEmbeddingClient)(nil)

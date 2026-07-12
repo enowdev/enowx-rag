@@ -566,6 +566,40 @@ func TestStats(t *testing.T) {
 	}
 }
 
+// TestMetricsEndpoint verifies GET /api/metrics returns the metrics snapshot
+// shape, with honest capability flags for a non-persistent mock backend.
+func TestMetricsEndpoint(t *testing.T) {
+	p := &mockProvider{projects: []string{"proj1"}}
+	svc, router := newTestServer(t, p, nil)
+	svc.SetBackend("qdrant")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if qc, ok := resp["query_count"].(float64); !ok || qc != 0 {
+		t.Errorf("query_count = %v, want 0", resp["query_count"])
+	}
+	if b, ok := resp["backend"].(string); !ok || b != "qdrant" {
+		t.Errorf("backend = %v, want qdrant", resp["backend"])
+	}
+	if persistent, ok := resp["persistent"].(bool); !ok || persistent {
+		t.Errorf("persistent = %v, want false for mock backend", resp["persistent"])
+	}
+	// last_query omitted until first search.
+	if _, present := resp["last_query"]; present {
+		t.Error("last_query should be omitted before any query")
+	}
+}
+
 // TestAPIErrors_JSON verifies that API errors return JSON with error field.
 func TestAPIErrors_JSON(t *testing.T) {
 	p := &mockProvider{}

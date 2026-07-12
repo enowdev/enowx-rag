@@ -22,10 +22,11 @@ const DefaultRecall = 40
 
 // SearchOpts controls the behaviour of Service.Search.
 type SearchOpts struct {
-	K      int  // final top-K results (default 5)
-	Recall int  // retrieval recall before rerank (default 40)
-	Hybrid bool // use dense+lexical RRF (provider must support it)
-	Rerank bool // use reranker if configured
+	K        int  // final top-K results (default 5)
+	Recall   int  // retrieval recall before rerank (default 40)
+	Hybrid   bool // use dense+lexical RRF (provider must support it)
+	Rerank   bool // use reranker if configured
+	Compress bool // drop near-duplicate results (same content_hash / identical content)
 }
 
 // ProjectStat holds per-project statistics returned by ListProjects.
@@ -104,6 +105,31 @@ type Service struct {
 	indexer    *indexer.Indexer
 	events     *EventBus
 	embedModel string // optional: set by main.go for stats endpoint
+	metrics    *Metrics
+	backend    string // vector store name (e.g. "qdrant"), set by main.go
+}
+
+// MetricsStore is an optional interface implemented only by backends that can
+// persist query metrics durably (currently pgvector). Service type-asserts the
+// provider for this interface; when absent, metrics are in-memory only and the
+// snapshot reports Persistent=false — an honest capability signal.
+type MetricsStore interface {
+	PersistQueryMetric(ctx context.Context, latencyMs float64, comp QueryComposition) error
+}
+
+// MetricsSnapshot is the JSON-serializable metrics response returned by
+// Service.MetricsSnapshot and the GET /api/metrics endpoint.
+type MetricsSnapshot struct {
+	QueryCount   int64             `json:"query_count"`
+	AvgLatencyMs float64           `json:"avg_latency_ms"`
+	P50LatencyMs float64           `json:"p50_latency_ms"`
+	P95LatencyMs float64           `json:"p95_latency_ms"`
+	TokensTotal  int64             `json:"tokens_total"`
+	TokensEmbed  int64             `json:"tokens_embed"`
+	TokensRerank int64             `json:"tokens_rerank"`
+	Persistent   bool              `json:"persistent"` // true iff backend implements MetricsStore
+	Backend      string            `json:"backend"`
+	LastQuery    *QueryComposition `json:"last_query,omitempty"` // nil until first query
 }
 
 // NewService creates a Service from the given components. reranker may be nil.
@@ -114,6 +140,7 @@ func NewService(provider rag.Provider, reranker rag.Reranker, idx *indexer.Index
 		reranker: reranker,
 		indexer:  idx,
 		events:   NewEventBus(),
+		metrics:  NewMetrics(),
 	}
 	return svc
 }
@@ -141,6 +168,46 @@ func (s *Service) EmbedModel() string {
 		return s.embedModel
 	}
 	return "unknown"
+}
+
+// SetBackend records the active vector store name (e.g. "qdrant", "pgvector")
+// so the metrics snapshot can report it honestly.
+func (s *Service) SetBackend(name string) {
+	s.backend = name
+}
+
+// MetricsSnapshot returns a point-in-time view of query metrics: in-memory
+// latency aggregates and query count, plus token usage read from the provider
+// and reranker when they implement rag.TokenCounter. Persistent reflects
+// whether the backend can store metrics durably (implements MetricsStore).
+func (s *Service) MetricsSnapshot(ctx context.Context) MetricsSnapshot {
+	avg, p50, p95, count, comp, haveComp := s.metrics.snapshot()
+
+	var embedTok, rerankTok int64
+	if tc, ok := s.provider.(rag.TokenCounter); ok {
+		embedTok = tc.TokensUsed()
+	}
+	if tc, ok := s.reranker.(rag.TokenCounter); ok {
+		rerankTok = tc.TokensUsed()
+	}
+	_, persistent := s.provider.(MetricsStore)
+
+	snap := MetricsSnapshot{
+		QueryCount:   count,
+		AvgLatencyMs: avg,
+		P50LatencyMs: p50,
+		P95LatencyMs: p95,
+		TokensEmbed:  embedTok,
+		TokensRerank: rerankTok,
+		TokensTotal:  embedTok + rerankTok,
+		Persistent:   persistent,
+		Backend:      s.backend,
+	}
+	if haveComp {
+		c := comp
+		snap.LastQuery = &c
+	}
+	return snap
 }
 
 // retrieveCandidates fetches recall candidates from the provider. When hybrid
@@ -176,10 +243,44 @@ func (s *Service) Search(ctx context.Context, projectID, query string, opts Sear
 		recall = DefaultRecall
 	}
 
+	// Measure retrieval latency around the provider call only (excludes rerank,
+	// which is measured separately by the reranker's own metrics if needed).
+	t0 := time.Now()
 	cands, err := s.retrieveCandidates(ctx, projectID, query, recall, opts.Hybrid)
+	latencyMs := float64(time.Since(t0).Microseconds()) / 1000.0
 	if err != nil {
 		return nil, err
 	}
+
+	hybridUsed := opts.Hybrid && s.providerSupportsHybrid()
+	comp := QueryComposition{
+		Hybrid:     hybridUsed,
+		Candidates: len(cands),
+	}
+	// Compute dense/lexical composition from per-result origin when the hybrid
+	// path populated it (pgvector). Non-hybrid or backends that don't project
+	// origin leave these at zero — an honest fallback.
+	for _, c := range cands {
+		if c.InDense {
+			comp.DenseCount++
+		}
+		if c.InLexical {
+			comp.LexicalCount++
+		}
+	}
+
+	// Record metrics once, at return, regardless of which branch produced out.
+	out := cands
+	defer func() {
+		comp.Results = len(out)
+		s.metrics.RecordQuery(latencyMs, comp)
+		if ms, ok := s.provider.(MetricsStore); ok {
+			// Persist asynchronously so query latency is unaffected. A copy of
+			// comp is captured; failures are non-fatal.
+			c := comp
+			go func() { _ = ms.PersistQueryMetric(context.WithoutCancel(ctx), latencyMs, c) }()
+		}
+	}()
 
 	// Publish a query event for SSE listeners.
 	s.events.Publish(Event{
@@ -197,21 +298,24 @@ func (s *Service) Search(ctx context.Context, projectID, query string, opts Sear
 		for i, c := range cands {
 			docs[i] = c.Content
 		}
-		hits, err := s.reranker.Rerank(ctx, query, docs, k)
-		if err == nil && len(hits) > 0 {
-			out := make([]rag.Result, 0, len(hits))
+		hits, rerr := s.reranker.Rerank(ctx, query, docs, k)
+		if rerr == nil && len(hits) > 0 {
+			reranked := make([]rag.Result, 0, len(hits))
 			for _, h := range hits {
 				if h.Index < 0 || h.Index >= len(cands) {
 					continue
 				}
 				r := cands[h.Index]
 				r.Score = h.Score
-				out = append(out, r)
+				reranked = append(reranked, r)
 			}
 			// Defensive clamp: don't rely on the reranker API honoring top_k.
-			if len(out) > k {
-				out = out[:k]
+			if len(reranked) > k {
+				reranked = reranked[:k]
 			}
+			comp.Reranked = true
+			comp.RerankMoved = rerankMoved(cands, reranked)
+			out = maybeCompress(reranked, opts.Compress)
 			return out, nil
 		}
 		// Reranker failed or returned empty: fall back to semantic order.
@@ -220,7 +324,58 @@ func (s *Service) Search(ctx context.Context, projectID, query string, opts Sear
 	if len(cands) > k {
 		cands = cands[:k]
 	}
-	return cands, nil
+	out = maybeCompress(cands, opts.Compress)
+	return out, nil
+}
+
+// providerSupportsHybrid reports whether the provider implements the hybrid
+// search path, mirroring the type assertion in retrieveCandidates.
+func (s *Service) providerSupportsHybrid() bool {
+	_, ok := s.provider.(rag.HybridSearcher)
+	return ok
+}
+
+// rerankMoved counts how many of the reranked results changed position relative
+// to their original order in cands (by result ID).
+func rerankMoved(cands, reranked []rag.Result) int {
+	origPos := make(map[string]int, len(cands))
+	for i, c := range cands {
+		origPos[c.ID] = i
+	}
+	moved := 0
+	for newPos, r := range reranked {
+		if old, ok := origPos[r.ID]; ok && old != newPos {
+			moved++
+		}
+	}
+	return moved
+}
+
+// maybeCompress removes near-duplicate results when compress is true, preserving
+// input order (which is already score-sorted). Two results are considered
+// duplicates when they share a non-empty content_hash or have identical content.
+func maybeCompress(results []rag.Result, compress bool) []rag.Result {
+	if !compress || len(results) < 2 {
+		return results
+	}
+	seenHash := make(map[string]struct{}, len(results))
+	seenContent := make(map[string]struct{}, len(results))
+	out := results[:0:0] // new backing array; don't mutate caller's slice
+	for _, r := range results {
+		hash := r.Meta["content_hash"]
+		if hash != "" {
+			if _, dup := seenHash[hash]; dup {
+				continue
+			}
+			seenHash[hash] = struct{}{}
+		}
+		if _, dup := seenContent[r.Content]; dup {
+			continue
+		}
+		seenContent[r.Content] = struct{}{}
+		out = append(out, r)
+	}
+	return out
 }
 
 // IndexProject scans the given directory and indexes all code/text files
@@ -231,6 +386,19 @@ func (s *Service) IndexProject(ctx context.Context, projectID, dir string) (*ind
 		Timestamp: time.Now(),
 		Data:      map[string]any{"project_id": projectID, "directory": dir},
 	})
+
+	// Ensure the collection exists before indexing. The MCP flow calls
+	// CreateProject first, but the HTTP reindex endpoint indexes a project
+	// directly, so a first-time index would otherwise fail with a missing
+	// collection. CreateCollection is idempotent across providers.
+	if err := s.provider.CreateCollection(ctx, projectID); err != nil {
+		s.events.Publish(Event{
+			Type:      "index_failed",
+			Timestamp: time.Now(),
+			Data:      map[string]any{"project_id": projectID, "error": err.Error()},
+		})
+		return nil, err
+	}
 
 	idx := s.indexer
 	if idx == nil {

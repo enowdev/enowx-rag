@@ -1,4 +1,4 @@
-import { Search, Moon, Sun } from 'lucide-react'
+import { Moon, Sun } from 'lucide-react'
 import type { Page } from '../App'
 
 interface TopbarProps {
@@ -25,11 +25,7 @@ export function Topbar({ theme, onToggleTheme, activeProject, page }: TopbarProp
         <span className="sep">/</span>
         <span>{pageLabels[page]}</span>
       </div>
-      <div className="search">
-        <Search size={14} strokeWidth={1.6} />
-        Search projects &amp; chunks…
-        <span className="kbd">⌘K</span>
-      </div>
+      <div className="topbar-spacer" />
       <button className="icon-btn" onClick={onToggleTheme} title="Toggle theme">
         {theme === 'dark' ? <Sun size={15} strokeWidth={1.7} /> : <Moon size={15} strokeWidth={1.7} />}
       </button>

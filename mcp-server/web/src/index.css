@@ -22,6 +22,12 @@
   overflow: hidden;
 }
 
+.proj-empty {
+  padding: 8px 10px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
 .proj-list {
   display: flex;
   flex-direction: column;
@@ -179,6 +185,10 @@
 .crumb .sep {
   margin: 0 8px;
   color: var(--text-faint);
+}
+
+.topbar-spacer {
+  margin-left: auto;
 }
 
 .search {
@@ -1817,7 +1827,8 @@
 }
 
 /* Disclaimer */
-.disclaimer {
+.disclaimer,
+.cli-hint {
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -1828,7 +1839,8 @@
   margin-top: 12px;
 }
 
-.disclaimer-icon {
+.disclaimer-icon,
+.cli-hint-icon {
   color: var(--text-faint);
   flex: none;
   margin-top: 1px;
@@ -2005,4 +2017,23 @@
   .step-group.current .step-label {
     display: inline;
   }
+}
+
+/* ===== Honest empty states ===== */
+.panel-empty,
+.results-empty {
+  color: var(--text-faint);
+  font-size: 12px;
+  padding: 10px 2px;
+  line-height: 1.5;
+}
+
+.reindex-msg {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 12.5px;
 }

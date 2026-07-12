@@ -386,6 +386,16 @@ func (p *PGVectorProvider) Close() error {
 	return nil
 }
 
+// TokensUsed forwards the embedder's cumulative token count when the embedder
+// tracks it (e.g. Voyage), so core.Service can report embed tokens without
+// direct embedder access. Returns 0 for embedders that don't (e.g. TEI).
+func (p *PGVectorProvider) TokensUsed() int64 {
+	if tc, ok := p.embedder.(TokenCounter); ok {
+		return tc.TokensUsed()
+	}
+	return 0
+}
+
 // ListProjectIDs returns all distinct project_id values that currently have
 // at least one row in the project memory table. This implements the
 // core.ProjectLister interface, enabling GET /api/projects to enumerate

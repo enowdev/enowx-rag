@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Search, RefreshCw, RotateCcw } from 'lucide-react'
 import type { Page } from '../App'
-import { api, type SearchResult } from '../lib/api'
+import { api, type SearchResult, type MetricsResponse, type PointInfo } from '../lib/api'
 import { useEvents } from '../lib/sse'
 
 interface OverviewProps {
@@ -12,34 +12,6 @@ interface OverviewProps {
   onSharedQueryChange?: (q: string) => void
   onProjectsUpdated?: (projs: { projectID: string; chunkCount: number }[]) => void
 }
-
-// Mock data for fallback when API is unavailable
-const mockResults: SearchResult[] = [
-  {
-    id: '1',
-    content: '// List only points belonging to this source_dir so that\n// indexing a different directory into the same project\n// doesn\'t wipe the first. Reconcile against currentSet.',
-    score: 0.912,
-    meta: { source_file: 'indexer.go', source_dir: 'pkg/indexer', chunk_index: '3', content_hash: 'a1b2c3d4', embed_model: 'voyage-4', type: 'architecture' },
-  },
-  {
-    id: '2',
-    content: 'DELETE FROM project_memory\nWHERE project_id = $1 AND id = ANY($2)\n// stale ids resolved from ListPoints() by source_dir',
-    score: 0.874,
-    meta: { source_file: 'pgvector.go', source_dir: 'pkg/rag', chunk_index: '5', content_hash: 'e5f6g7h8', embed_model: 'voyage-4', type: 'snippet' },
-  },
-  {
-    id: '3',
-    content: 'SELECT id, metadata->>\'source_file\' FROM project_memory\nWHERE project_id = $1 AND metadata->>\'source_dir\' = $2',
-    score: 0.661,
-    meta: { source_file: 'pgvector.go', source_dir: 'pkg/rag', chunk_index: '4', content_hash: 'i9j0k1l2', embed_model: 'voyage-4', type: 'snippet' },
-  },
-  {
-    id: '4',
-    content: '// DeletePoints removes specific points by ID from the\n// project collection.',
-    score: 0.402,
-    meta: { source_file: 'provider.go', source_dir: 'pkg/rag', chunk_index: '2', content_hash: 'm3n4o5p6', embed_model: 'voyage-4', type: 'api' },
-  },
-]
 
 function scoreColor(score: number): string {
   if (score >= 0.75) return 'var(--good)'
@@ -64,9 +36,32 @@ function highlightSnippet(content: string, query: string): React.ReactNode {
   )
 }
 
+// fileAgg aggregates chunk counts per source_file from the project's points.
+interface FileAgg {
+  name: string
+  count: number
+}
+
+function aggregateFiles(points: PointInfo[]): FileAgg[] {
+  const counts = new Map<string, number>()
+  for (const p of points) {
+    const f = p.source_file || '(unknown)'
+    counts.set(f, (counts.get(f) || 0) + 1)
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k'
+  return String(n)
+}
+
 export function Overview({ activeProject, onNavigate, onNavigateWithQuery, sharedQuery, onSharedQueryChange, onProjectsUpdated }: OverviewProps) {
-  const [query, setQuery] = useState(sharedQuery || 'how does pgvector handle stale chunks')
-  const [results, setResults] = useState<SearchResult[]>(mockResults)
+  const [query, setQuery] = useState(sharedQuery || '')
+  const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [hybrid, setHybrid] = useState(true)
@@ -74,80 +69,98 @@ export function Overview({ activeProject, onNavigate, onNavigateWithQuery, share
   const [compress, setCompress] = useState(false)
   const [k, setK] = useState(4)
   const [recall, setRecall] = useState(40)
-  const [stats, setStats] = useState<{ totalProjects: number; totalChunks: number; embedModel: string } | null>(null)
+  const [stats, setStats] = useState<{ totalChunks: number; embedModel: string } | null>(null)
+  const [metrics, setMetrics] = useState<MetricsResponse | null>(null)
+  const [points, setPoints] = useState<PointInfo[]>([])
+  const [reindexMsg, setReindexMsg] = useState('')
   const { events } = useEvents()
 
-  // Sync local query when sharedQuery changes (e.g., when arriving from Playground)
   useEffect(() => {
-    if (sharedQuery && sharedQuery !== query) {
-      setQuery(sharedQuery)
-    }
+    if (sharedQuery && sharedQuery !== query) setQuery(sharedQuery)
   }, [sharedQuery]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Propagate query changes up to the shared state
   const handleQueryChange = useCallback((newQuery: string) => {
     setQuery(newQuery)
     onSharedQueryChange?.(newQuery)
   }, [onSharedQueryChange])
 
-  // Fetch stats on mount, when activeProject changes, and when index_completed
-  // or project_deleted SSE events arrive (VAL-CROSS-011, VAL-CROSS-012).
   const refreshStats = useCallback(() => {
     api.stats().then((s) => {
-      setStats({ totalProjects: s.total_projects, totalChunks: s.total_chunks, embedModel: s.embed_model })
-      // Also update the parent's project list so the sidebar stays in sync
+      setStats({ totalChunks: s.total_chunks, embedModel: s.embed_model })
       onProjectsUpdated?.(s.projects.map((p) => ({ projectID: p.project_id, chunkCount: p.chunk_count })))
-    }).catch(() => {
-      setStats({ totalProjects: 9, totalChunks: 76, embedModel: 'voyage-4' })
-    })
+    }).catch(() => setStats(null))
   }, [onProjectsUpdated])
+
+  const refreshMetrics = useCallback(() => {
+    api.metrics().then(setMetrics).catch(() => setMetrics(null))
+  }, [])
+
+  const refreshPoints = useCallback(() => {
+    if (!activeProject) {
+      setPoints([])
+      return
+    }
+    api.listPoints(activeProject).then(setPoints).catch(() => setPoints([]))
+  }, [activeProject])
 
   useEffect(() => {
     refreshStats()
-  }, [activeProject, refreshStats])
+    refreshMetrics()
+    refreshPoints()
+  }, [activeProject, refreshStats, refreshMetrics, refreshPoints])
 
-  // Listen for SSE events that should trigger a stats refresh
+  // Refresh derived data on relevant SSE events.
   useEffect(() => {
     if (events.length === 0) return
     const latest = events[0]
-    if (latest.type === 'index_completed' || latest.type === 'project_deleted' || latest.type === 'points_deleted' || latest.type === 'documents_indexed') {
+    if (['index_completed', 'project_deleted', 'points_deleted', 'documents_indexed'].includes(latest.type)) {
       refreshStats()
+      refreshPoints()
     }
-  }, [events, refreshStats])
+    if (latest.type === 'query_executed') {
+      refreshMetrics()
+    }
+  }, [events, refreshStats, refreshPoints, refreshMetrics])
 
   const runSearch = useCallback(async () => {
     if (!activeProject || !query.trim()) return
     setLoading(true)
     setError('')
     try {
-      const resp = await api.search({
-        project_id: activeProject,
-        query,
-        k,
-        recall,
-        hybrid,
-        rerank,
-      })
-      setResults(resp.results.length > 0 ? resp.results : [])
+      const resp = await api.search({ project_id: activeProject, query, k, recall, hybrid, rerank, compress })
+      setResults(resp.results)
+      refreshMetrics()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed')
-      // Keep mock results visible for UI demo
+      setResults([])
     } finally {
       setLoading(false)
     }
-  }, [activeProject, query, k, recall, hybrid, rerank])
+  }, [activeProject, query, k, recall, hybrid, rerank, compress, refreshMetrics])
 
   const handleReindex = useCallback(async () => {
     if (!activeProject) return
+    const directory = window.prompt(
+      `Directory to (re)index for "${activeProject}" (absolute path):`,
+    )
+    if (!directory) return
+    setReindexMsg('Re-indexing…')
     try {
-      await api.reindex(activeProject, `/Project/${activeProject}`)
-    } catch {
-      // API may not be available
+      const r = await api.reindex(activeProject, directory)
+      setReindexMsg(`Indexed ${r.chunks_indexed} chunks (${r.files_scanned} files, ${r.skipped} unchanged, ${r.points_deleted} removed).`)
+      refreshStats()
+      refreshPoints()
+    } catch (err) {
+      setReindexMsg(`Re-index failed: ${err instanceof Error ? err.message : 'unknown error'}`)
     }
-  }, [activeProject])
+  }, [activeProject, refreshStats, refreshPoints])
 
-  // Format activity events for display
-  const activityRows = events.slice(0, 6).map((ev) => {
+  const fileAggs = aggregateFiles(points)
+  const uniqueFiles = fileAggs.length
+  const maxChunks = fileAggs.length > 0 ? fileAggs[0].count : 0
+
+  // Activity rows from live SSE events (no synthetic fallback).
+  const activityRows = events.slice(0, 8).map((ev) => {
     const time = new Date(ev.timestamp).toLocaleTimeString('en-US', { hour12: false })
     const isOk = ev.type === 'index_completed' || ev.type === 'query_executed'
     const label = ev.type.replace(/_/g, ' ')
@@ -161,15 +174,8 @@ export function Overview({ activeProject, onNavigate, onNavigateWithQuery, share
     return { time, label, desc, isOk }
   })
 
-  // Fallback activity if no SSE events
-  const displayActivity = activityRows.length > 0 ? activityRows : [
-    { time: '12:19:41', label: '✓ synced', desc: '76 chunks · 0 deleted', isOk: true },
-    { time: '12:14:02', label: '✓ query', desc: 'latency 213ms · k=4', isOk: true },
-    { time: '12:19:38', label: 'embed', desc: '17 files → voyage-4', isOk: false },
-    { time: '12:13:55', label: 'rerank', desc: '40 → 4 · rerank-2.5', isOk: false },
-    { time: '12:19:37', label: 'scan', desc: '/Project/enowx-rag', isOk: false },
-    { time: '12:09:20', label: '✓ query', desc: 'latency 198ms · k=4', isOk: true },
-  ]
+  const comp = metrics?.last_query
+  const hasComposition = !!comp && (comp.dense_count > 0 || comp.lexical_count > 0)
 
   return (
     <>
@@ -178,7 +184,7 @@ export function Overview({ activeProject, onNavigate, onNavigateWithQuery, share
         <h1>Overview</h1>
         <span className="id mono">project_{activeProject || '—'}</span>
         <div className="head-actions">
-          <button className="btn" onClick={handleReindex}>
+          <button className="btn" onClick={handleReindex} disabled={!activeProject}>
             <RefreshCw size={14} strokeWidth={1.7} />
             Re-index
           </button>
@@ -188,46 +194,43 @@ export function Overview({ activeProject, onNavigate, onNavigateWithQuery, share
           </button>
         </div>
       </div>
+      {reindexMsg && <div className="reindex-msg">{reindexMsg}</div>}
 
       {/* KPIs */}
       <div className="kpis">
         <div className="kpi">
           <div className="label">Chunks</div>
           <div className="val tnum">{stats?.totalChunks ?? '—'}</div>
-          <div className="sub">across 17 files</div>
+          <div className="sub">{uniqueFiles > 0 ? `across ${uniqueFiles} file${uniqueFiles === 1 ? '' : 's'}` : 'no files indexed'}</div>
         </div>
         <div className="kpi">
           <div className="label">Embedding</div>
           <div className="val mono" style={{ fontSize: '18px', marginTop: '11px' }}>
-            {stats?.embedModel ?? 'voyage-4'}
+            {stats?.embedModel ?? '—'}
           </div>
-          <div className="sub mono">1024-dim · cosine</div>
+          <div className="sub mono">{metrics?.backend ? `${metrics.backend}${metrics.persistent ? ' · persistent' : ''}` : ''}</div>
         </div>
         <div className="kpi">
           <div className="label">Avg. query latency</div>
-          <div className="val tnum">213<small> ms</small></div>
-          <svg className="spark" viewBox="0 0 120 30" preserveAspectRatio="none">
-            <polyline
-              fill="none"
-              stroke="var(--accent)"
-              strokeWidth="1.5"
-              points="0,22 12,18 24,20 36,12 48,15 60,9 72,14 84,7 96,11 108,6 120,10"
-            />
-            <circle cx="120" cy="10" r="2.2" fill="var(--accent)" />
-          </svg>
+          {metrics && metrics.query_count > 0 ? (
+            <>
+              <div className="val tnum">{Math.round(metrics.avg_latency_ms)}<small> ms</small></div>
+              <div className="sub mono">p50 {Math.round(metrics.p50_latency_ms)} · p95 {Math.round(metrics.p95_latency_ms)} · {metrics.query_count} q</div>
+            </>
+          ) : (
+            <><div className="val tnum">—</div><div className="sub">no queries yet</div></>
+          )}
         </div>
         <div className="kpi">
           <div className="label">Tokens used</div>
-          <div className="val tnum">53.9<small> M</small></div>
-          <div className="token-meter">
-            <div className="meter-track">
-              <i style={{ width: '27%' }} />
-            </div>
-            <div className="meter-cap">
-              <span>26.96%</span>
-              <span className="mono">200M free</span>
-            </div>
-          </div>
+          {metrics && metrics.tokens_total > 0 ? (
+            <>
+              <div className="val tnum">{formatTokens(metrics.tokens_total)}</div>
+              <div className="sub mono">{formatTokens(metrics.tokens_embed)} embed · {formatTokens(metrics.tokens_rerank)} rerank</div>
+            </>
+          ) : (
+            <><div className="val tnum">—</div><div className="sub">not tracked yet</div></>
+          )}
         </div>
       </div>
 
@@ -249,7 +252,7 @@ export function Overview({ activeProject, onNavigate, onNavigateWithQuery, share
                 onKeyDown={(e) => e.key === 'Enter' && runSearch()}
                 placeholder="Enter a query…"
               />
-              <button className="btn primary" style={{ padding: '9px 14px' }} onClick={runSearch} disabled={loading}>
+              <button className="btn primary" style={{ padding: '9px 14px' }} onClick={runSearch} disabled={loading || !activeProject}>
                 {loading ? <RotateCcw size={14} strokeWidth={1.7} className="spin" /> : <Search size={14} strokeWidth={1.7} />}
                 Run
               </button>
@@ -279,6 +282,9 @@ export function Overview({ activeProject, onNavigate, onNavigateWithQuery, share
             {error && <div className="error-state" style={{ marginTop: '12px' }}>{error}</div>}
 
             <div className="results">
+              {results.length === 0 && !loading && !error && (
+                <div className="results-empty">Run a query to see results.</div>
+              )}
               {results.map((res, i) => {
                 const meta = res.meta || {}
                 const fileName = meta.source_file || 'unknown'
@@ -314,14 +320,15 @@ export function Overview({ activeProject, onNavigate, onNavigateWithQuery, share
         <section className="panel g-status">
           <div className="panel-head">
             <h2>Index status</h2>
-            <span className="hint mono" style={{ color: 'var(--good)' }}>● synced</span>
+            <span className="hint mono" style={{ color: stats ? 'var(--good)' : 'var(--text-faint)' }}>
+              {stats ? '● synced' : '○ no data'}
+            </span>
           </div>
           <div className="panel-body" style={{ padding: '12px 15px' }}>
-            <div className="stat-line"><span className="k">Files scanned</span><span className="v tnum">17</span></div>
-            <div className="stat-line"><span className="k">Chunks indexed</span><span className="v tnum">{stats?.totalChunks ?? 76}</span></div>
-            <div className="stat-line"><span className="k">Points deleted</span><span className="v tnum">0</span></div>
-            <div className="stat-line"><span className="k">Chunk version</span><span className="v">v2 · 1500c</span></div>
-            <div className="stat-line"><span className="k">Last sync</span><span className="v">just now</span></div>
+            <div className="stat-line"><span className="k">Files indexed</span><span className="v tnum">{uniqueFiles}</span></div>
+            <div className="stat-line"><span className="k">Chunks indexed</span><span className="v tnum">{stats?.totalChunks ?? '—'}</span></div>
+            <div className="stat-line"><span className="k">Backend</span><span className="v mono">{metrics?.backend ?? '—'}</span></div>
+            <div className="stat-line"><span className="k">Persistence</span><span className="v">{metrics ? (metrics.persistent ? 'durable' : 'in-memory') : '—'}</span></div>
           </div>
         </section>
 
@@ -329,34 +336,42 @@ export function Overview({ activeProject, onNavigate, onNavigateWithQuery, share
         <section className="panel g-breakdown">
           <div className="panel-head">
             <h2>Retrieval breakdown</h2>
-            <span className="hint mono">this query</span>
+            <span className="hint mono">last query</span>
           </div>
           <div className="panel-body" style={{ padding: '13px 15px' }}>
-            <div className="compo">
-              <i style={{ width: hybrid ? '58%' : '100%', background: 'var(--accent)' }} />
-              {hybrid && <i style={{ width: '42%', background: 'var(--good)' }} />}
-            </div>
-            <div className="compo-legend">
-              <div className="lrow">
-                <span className="sw" style={{ background: 'var(--accent)' }} />
-                Dense (vector)
-                <span className="lval">{hybrid ? '58%' : '100%'}</span>
+            {hasComposition ? (
+              <>
+                <div className="compo">
+                  <i style={{ width: `${(comp!.dense_count / (comp!.dense_count + comp!.lexical_count)) * 100}%`, background: 'var(--accent)' }} />
+                  <i style={{ width: `${(comp!.lexical_count / (comp!.dense_count + comp!.lexical_count)) * 100}%`, background: 'var(--good)' }} />
+                </div>
+                <div className="compo-legend">
+                  <div className="lrow">
+                    <span className="sw" style={{ background: 'var(--accent)' }} />
+                    Dense (vector)
+                    <span className="lval">{comp!.dense_count}</span>
+                  </div>
+                  <div className="lrow">
+                    <span className="sw" style={{ background: 'var(--good)' }} />
+                    Lexical (tsvector)
+                    <span className="lval">{comp!.lexical_count}</span>
+                  </div>
+                  {comp!.reranked && (
+                    <div className="lrow">
+                      <span className="sw" style={{ background: 'var(--border-strong)' }} />
+                      Reranker moved
+                      <span className="lval">{comp!.rerank_moved}</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="panel-empty">
+                {comp
+                  ? 'Dense-only retrieval — enable hybrid on a pgvector backend for a dense/lexical breakdown.'
+                  : 'No query yet.'}
               </div>
-              {hybrid && (
-                <div className="lrow">
-                  <span className="sw" style={{ background: 'var(--good)' }} />
-                  Lexical (tsvector)
-                  <span className="lval">42%</span>
-                </div>
-              )}
-              {rerank && (
-                <div className="lrow">
-                  <span className="sw" style={{ background: 'var(--border-strong)' }} />
-                  Reranker moved
-                  <span className="lval">2 ↑</span>
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </section>
 
@@ -367,50 +382,43 @@ export function Overview({ activeProject, onNavigate, onNavigateWithQuery, share
             <span className="hint">chunks per file</span>
           </div>
           <div className="panel-body" style={{ padding: '14px 15px' }}>
-            <div className="dist" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '9px 24px' }}>
-              {[
-                { name: 'README.md', count: 12, pct: 100 },
-                { name: 'pkg/rag/qdrant.go', count: 7, pct: 58 },
-                { name: 'cmd/mcp-server/main.go', count: 9, pct: 75 },
-                { name: 'pkg/indexer/indexer.go', count: 6, pct: 50 },
-                { name: 'pkg/rag/pgvector.go', count: 8, pct: 67 },
-                { name: 'pkg/rag/chroma.go', count: 5, pct: 42 },
-              ].map((f) => (
-                <div className="dist-row" key={f.name}>
-                  <span className="dname">{f.name}</span>
-                  <span className="dcount">{f.count}</span>
-                  <span className="dist-bar">
-                    <i style={{ width: `${f.pct}%` }} />
-                  </span>
-                </div>
-              ))}
-            </div>
+            {fileAggs.length === 0 ? (
+              <div className="panel-empty">No chunks indexed for this project.</div>
+            ) : (
+              <div className="dist" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '9px 24px' }}>
+                {fileAggs.slice(0, 8).map((f) => (
+                  <div className="dist-row" key={f.name}>
+                    <span className="dname">{f.name}</span>
+                    <span className="dcount">{f.count}</span>
+                    <span className="dist-bar">
+                      <i style={{ width: `${maxChunks > 0 ? (f.count / maxChunks) * 100 : 0}%` }} />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
         {/* Recent files */}
         <section className="panel g-files">
           <div className="panel-head">
-            <h2>Recent files</h2>
+            <h2>Files</h2>
           </div>
           <div className="panel-body" style={{ padding: '6px 15px 12px' }}>
-            <div className="files">
-              {[
-                { name: 'pkg/rag/pgvector.go', chunks: 8, status: 'good' },
-                { name: 'pkg/indexer/indexer.go', chunks: 6, status: 'good' },
-                { name: 'cmd/mcp-server/main.go', chunks: 9, status: 'good' },
-                { name: 'pkg/rag/voyage.go', chunks: 4, status: 'good' },
-                { name: 'pkg/rag/tei.go', chunks: 3, status: 'good' },
-                { name: 'README.md', chunks: 12, status: 'warn' },
-                { name: 'skill/enowx-rag.md', chunks: 7, status: 'good' },
-              ].map((f) => (
-                <div className="file-row" key={f.name}>
-                  <span className="status-dot" style={{ background: `var(--${f.status})` }} />
-                  <span className="fname">{f.name}</span>
-                  <span className="fmeta">{f.chunks} ch</span>
-                </div>
-              ))}
-            </div>
+            {fileAggs.length === 0 ? (
+              <div className="panel-empty">—</div>
+            ) : (
+              <div className="files">
+                {fileAggs.slice(0, 8).map((f) => (
+                  <div className="file-row" key={f.name}>
+                    <span className="status-dot" style={{ background: 'var(--good)' }} />
+                    <span className="fname">{f.name}</span>
+                    <span className="fmeta">{f.count} ch</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
@@ -421,15 +429,19 @@ export function Overview({ activeProject, onNavigate, onNavigateWithQuery, share
             <span className="hint">live</span>
           </div>
           <div className="panel-body" style={{ padding: '12px 15px' }}>
-            <div className="log" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 24px' }}>
-              {displayActivity.map((row, i) => (
-                <div className="row" key={i}>
-                  <span className="t">{row.time}</span>
-                  <span className={row.isOk ? 'ok' : ''}>{row.label}</span>
-                  <span>{row.desc}</span>
-                </div>
-              ))}
-            </div>
+            {activityRows.length === 0 ? (
+              <div className="panel-empty">No activity yet — index a project or run a query.</div>
+            ) : (
+              <div className="log" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 24px' }}>
+                {activityRows.map((row, i) => (
+                  <div className="row" key={i}>
+                    <span className="t">{row.time}</span>
+                    <span className={row.isOk ? 'ok' : ''}>{row.label}</span>
+                    <span>{row.desc}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       </div>

@@ -37,6 +37,7 @@ func NewRouter(svc *core.Service, ui fs.FS) http.Handler {
 		r.Delete("/projects/{id}", h.DeleteProject)
 		r.Post("/search", h.Search)
 		r.Get("/stats", h.Stats)
+		r.Get("/metrics", h.Metrics)
 		r.Get("/events", h.SSE)
 
 		// Setup wizard endpoints
