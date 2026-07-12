@@ -324,6 +324,34 @@ func TestSearchWithRerank(t *testing.T) {
 	}
 }
 
+// TestSearchRerankClampsToK verifies that if the reranker returns more hits
+// than K (e.g. the rerank API ignores top_k), Search still truncates the
+// final result set to K defensively.
+func TestSearchRerankClampsToK(t *testing.T) {
+	p := &mockProvider{}
+	reranker := &mockReranker{
+		hits: []rag.RerankHit{
+			{Index: 0, Score: 0.99},
+			{Index: 1, Score: 0.95},
+			{Index: 2, Score: 0.90},
+			{Index: 3, Score: 0.85},
+			{Index: 4, Score: 0.80},
+		},
+	}
+	svc := NewService(p, reranker, nil)
+
+	results, err := svc.Search(context.Background(), "proj", "query", SearchOpts{
+		K: 3, Recall: 10, Rerank: true,
+	})
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+
+	if len(results) != 3 {
+		t.Fatalf("expected results clamped to K=3, got %d", len(results))
+	}
+}
+
 // TestSearchRerankerErrorFallback verifies that if the reranker returns an
 // error, Search falls back to semantic order (no error propagated).
 func TestSearchRerankerErrorFallback(t *testing.T) {

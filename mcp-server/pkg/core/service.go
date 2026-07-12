@@ -208,6 +208,10 @@ func (s *Service) Search(ctx context.Context, projectID, query string, opts Sear
 				r.Score = h.Score
 				out = append(out, r)
 			}
+			// Defensive clamp: don't rely on the reranker API honoring top_k.
+			if len(out) > k {
+				out = out[:k]
+			}
 			return out, nil
 		}
 		// Reranker failed or returned empty: fall back to semantic order.

@@ -858,3 +858,42 @@ func (i *memFileInfo) Sys() any           { return nil }
 
 // Compile-time assertion that fstestMemFS implements fs.FS.
 var _ fs.FS = (*fstestMemFS)(nil)
+
+// serveSSE drives the SSE handler with an already-cancelled request context so
+// it writes its response headers, then returns immediately via r.Context().Done()
+// instead of blocking on the event stream. Returns the recorded response.
+func serveSSE(t *testing.T, provider rag.Provider) *httptest.ResponseRecorder {
+	t.Helper()
+	_, router := newTestServer(t, provider, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/events", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+// TestSSE_NoCORSByDefault verifies that GET /api/events does NOT emit an
+// Access-Control-Allow-Origin header when RAG_CORS_ORIGIN is unset, keeping
+// the event stream same-origin only.
+func TestSSE_NoCORSByDefault(t *testing.T) {
+	t.Setenv("RAG_CORS_ORIGIN", "")
+	w := serveSSE(t, &mockProvider{})
+
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("expected no Access-Control-Allow-Origin header by default, got %q", got)
+	}
+}
+
+// TestSSE_CORSWhenConfigured verifies that RAG_CORS_ORIGIN, when set, is
+// reflected verbatim into the Access-Control-Allow-Origin header.
+func TestSSE_CORSWhenConfigured(t *testing.T) {
+	const origin = "https://app.example.com"
+	t.Setenv("RAG_CORS_ORIGIN", origin)
+
+	w := serveSSE(t, &mockProvider{})
+
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != origin {
+		t.Errorf("expected Access-Control-Allow-Origin=%q, got %q", origin, got)
+	}
+}

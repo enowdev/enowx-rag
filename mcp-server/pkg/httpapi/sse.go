@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -22,7 +23,14 @@ func (h *Handlers) SSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// Only advertise a cross-origin policy when explicitly configured via
+	// RAG_CORS_ORIGIN (e.g. "*" or "https://app.example.com"). When unset,
+	// no CORS header is sent so the event stream stays same-origin only —
+	// this prevents other web apps from reading events when the instance is
+	// exposed publicly (especially alongside RAG_ADMIN_TOKEN).
+	if origin := os.Getenv("RAG_CORS_ORIGIN"); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	}
 
 	// Subscribe to events from the service EventBus.
 	ch := h.svc.Events().Subscribe()
