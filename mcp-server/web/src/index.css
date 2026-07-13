@@ -46,14 +46,34 @@
 .brand-mark {
   width: 22px;
   height: 22px;
-  border: 1px solid var(--border-strong);
   display: grid;
   place-items: center;
-  border-radius: 5px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent);
+}
+
+.brand-img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+/* Swap the mark by theme: black on light UI, white on dark UI. The app stamps
+   data-theme on :root; when absent it follows the OS via prefers-color-scheme. */
+.brand-img-dark {
+  display: none;
+}
+:root[data-theme="dark"] .brand-img-light {
+  display: none;
+}
+:root[data-theme="dark"] .brand-img-dark {
+  display: block;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brand-img-light {
+    display: none;
+  }
+  :root:not([data-theme="light"]) .brand-img-dark {
+    display: block;
+  }
 }
 
 .brand-name {
@@ -1093,14 +1113,8 @@
 .wizard-topbar .brand-mark {
   width: 22px;
   height: 22px;
-  border: 1px solid var(--border-strong);
   display: grid;
   place-items: center;
-  border-radius: 5px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent);
 }
 
 .wizard-topbar .brand-name {
