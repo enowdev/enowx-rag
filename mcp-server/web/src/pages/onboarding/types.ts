@@ -1,7 +1,7 @@
 // Shared types for the onboarding wizard.
 
 export type VectorStoreProvider = 'pgvector' | 'qdrant' | 'chroma'
-export type EmbedderProvider = 'voyage' | 'tei'
+export type EmbedderProvider = 'voyage' | 'tei' | 'openai'
 
 /** Draft configuration that the wizard collects across all steps. */
 export interface DraftConfig {
@@ -15,6 +15,10 @@ export interface DraftConfig {
   voyageModel: string
   voyageDim: number
   teiURL: string
+  openaiAPIKey: string
+  openaiModel: string
+  openaiBaseURL: string
+  openaiDim: number
 }
 
 export const defaultDraft: DraftConfig = {
@@ -28,6 +32,10 @@ export const defaultDraft: DraftConfig = {
   voyageModel: 'voyage-4',
   voyageDim: 1024,
   teiURL: 'http://localhost:8081',
+  openaiAPIKey: '',
+  openaiModel: 'text-embedding-3-small',
+  openaiBaseURL: 'https://api.openai.com/v1',
+  openaiDim: 0,
 }
 
 export const STEPS = ['welcome', 'vector', 'embedding', 'test', 'setup', 'install', 'done'] as const
@@ -51,6 +59,10 @@ export function draftToRequest(cfg: DraftConfig): import('../../lib/api').SetupA
     voyage_api_key: cfg.embedder === 'voyage' ? cfg.voyageAPIKey : undefined,
     voyage_model: cfg.embedder === 'voyage' ? cfg.voyageModel : undefined,
     voyage_dim: cfg.embedder === 'voyage' ? cfg.voyageDim : undefined,
+    openai_api_key: cfg.embedder === 'openai' ? cfg.openaiAPIKey : undefined,
+    openai_model: cfg.embedder === 'openai' ? cfg.openaiModel : undefined,
+    openai_base_url: cfg.embedder === 'openai' ? cfg.openaiBaseURL : undefined,
+    openai_dim: cfg.embedder === 'openai' ? cfg.openaiDim : undefined,
     pgvector_dsn: cfg.vectorStore === 'pgvector' ? cfg.pgvectorDSN : undefined,
     qdrant_url: cfg.vectorStore === 'qdrant' ? cfg.qdrantURL : undefined,
     qdrant_api_key: cfg.vectorStore === 'qdrant' ? cfg.qdrantAPIKey : undefined,

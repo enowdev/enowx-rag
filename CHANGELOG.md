@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- OpenAI-compatible embedder (`RAG_EMBEDDER=openai`): works with any
+  `/v1/embeddings` API — OpenAI, Together, Jina, Mistral, a local Ollama,
+  LiteLLM, etc. — via `RAG_OPENAI_BASE_URL` / `RAG_OPENAI_MODEL` /
+  `RAG_OPENAI_API_KEY` / `RAG_OPENAI_DIM`. Surfaced in the wizard's Embedding
+  step, which also clarifies that TEI serves any local model.
 - Query metrics: latency (avg/p50/p95), Voyage token usage, and dense/lexical
   retrieval breakdown, exposed at `GET /api/metrics` and shown on the dashboard.
   Persisted durably to `~/.enowx-rag/metrics.db` (pure-Go SQLite, no cgo), so

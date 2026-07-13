@@ -664,9 +664,34 @@ Set `RAG_EMBEDDER=voyage` (or just set `RAG_VOYAGE_API_KEY` — it auto-detects)
 }
 ```
 
-### Option B: TEI (self-hosted)
+### Option B: OpenAI-compatible (any `/v1/embeddings` API)
 
-Runs a local Text Embeddings Inference container. Requires Docker and ~1 GB of RAM.
+Works with OpenAI, Together, Jina, Mistral, DeepInfra, LiteLLM, a local Ollama, and anything else that speaks the OpenAI embeddings protocol. Point `RAG_OPENAI_BASE_URL` at the provider and set the model. Leave the API key empty for a local/no-auth endpoint. `RAG_OPENAI_DIM` is optional (`0` = auto-detect; models like `text-embedding-3-*` honor it).
+
+```json
+"env": {
+  "RAG_VECTOR_STORE": "qdrant",
+  "RAG_QDRANT_URL": "http://localhost:6333",
+  "RAG_EMBEDDER": "openai",
+  "RAG_OPENAI_BASE_URL": "https://api.openai.com/v1",
+  "RAG_OPENAI_API_KEY": "sk-...",
+  "RAG_OPENAI_MODEL": "text-embedding-3-small"
+}
+```
+
+Local Ollama example (no API key needed):
+
+```json
+"env": {
+  "RAG_EMBEDDER": "openai",
+  "RAG_OPENAI_BASE_URL": "http://localhost:11434/v1",
+  "RAG_OPENAI_MODEL": "nomic-embed-text"
+}
+```
+
+### Option C: TEI (self-hosted)
+
+Runs a local Text Embeddings Inference container — serve **any** local embedding model (BGE, GTE, E5, nomic-embed, …); enowx-rag only needs its URL. Requires Docker and ~1 GB of RAM.
 
 ```bash
 cd mcp-server && docker compose up -d qdrant tei-embedding
@@ -688,7 +713,7 @@ All configuration is via environment variables (or config file at `~/.enowx-rag/
 | Variable | Default | Description |
 | --- | --- | --- |
 | `RAG_VECTOR_STORE` | `qdrant` | Vector store: `qdrant`, `chroma`, or `pgvector` |
-| `RAG_EMBEDDER` | `voyage` | Embedding provider: `voyage` or `tei` (auto-detects: falls back to `tei` if `RAG_VOYAGE_API_KEY` is not set) |
+| `RAG_EMBEDDER` | `voyage` | Embedding provider: `voyage`, `openai` (any OpenAI-compatible API), or `tei` (auto-detects: falls back to `tei` if `RAG_VOYAGE_API_KEY` is not set) |
 | `RAG_QDRANT_URL` | `http://localhost:6333` | Qdrant REST URL |
 | `RAG_QDRANT_API_KEY` | *(empty)* | Optional Qdrant API key (for Qdrant Cloud) |
 | `RAG_CHROMA_URL` | `http://localhost:8000` | Chroma REST URL |
@@ -696,6 +721,10 @@ All configuration is via environment variables (or config file at `~/.enowx-rag/
 | `RAG_TEI_URL` | `http://localhost:8081` | Text Embeddings Inference URL. Used when `RAG_EMBEDDER=tei` |
 | `RAG_VOYAGE_API_KEY` | *(empty)* | Voyage AI API key (required when `RAG_EMBEDDER=voyage`). Get a free key at [voyageai.com](https://voyageai.com) (200M free tokens with voyage-4) |
 | `RAG_VOYAGE_MODEL` | `voyage-4` | Voyage AI embedding model name |
+| `RAG_OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible embeddings base URL (used when `RAG_EMBEDDER=openai`). Point at OpenAI, Together, Jina, a local Ollama (`http://localhost:11434/v1`), etc. |
+| `RAG_OPENAI_API_KEY` | *(empty)* | API key for the OpenAI-compatible endpoint. Leave empty for local/no-auth endpoints |
+| `RAG_OPENAI_MODEL` | *(empty)* | Embedding model name (required when `RAG_EMBEDDER=openai`), e.g. `text-embedding-3-small`, `nomic-embed-text` |
+| `RAG_OPENAI_DIM` | `0` | Output dimension for the OpenAI embedder. `0` = auto-detect; models like `text-embedding-3-*` honor an explicit value |
 | `RAG_VECTOR_DIM` | `1024` | Embedding vector dimension (matches voyage-4 default). Override only if using a different model with a different dimension |
 | `RAG_RERANKER_MODEL` | *(empty)* | Reranker model name (e.g., `rerank-2.5`). When set and `RAG_VOYAGE_API_KEY` is available, reranking is enabled for search |
 | `RAG_ADMIN_TOKEN` | *(empty)* | Optional admin token. When set, all `/api/*` endpoints require `Authorization: Bearer <token>` header. When unset, no auth is required |

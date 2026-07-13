@@ -97,6 +97,10 @@ export interface SetupApplyRequest {
   voyage_api_key?: string
   voyage_model?: string
   voyage_dim?: number
+  openai_api_key?: string
+  openai_model?: string
+  openai_base_url?: string
+  openai_dim?: number
   pgvector_dsn?: string
   qdrant_url?: string
   qdrant_api_key?: string

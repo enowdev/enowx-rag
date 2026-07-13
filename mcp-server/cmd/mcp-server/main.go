@@ -34,6 +34,10 @@ type RuntimeConfig struct {
 	TEIBaseURL    string
 	VoyageAPIKey  string
 	VoyageModel   string
+	OpenAIAPIKey  string
+	OpenAIModel   string
+	OpenAIBaseURL string
+	OpenAIDim     int
 	RerankerModel string
 	VectorDim     int
 }
@@ -57,6 +61,10 @@ func resolveConfig() (*RuntimeConfig, error) {
 		TEIBaseURL:    cfg.TEIURL,
 		VoyageAPIKey:  cfg.Voyage.APIKey,
 		VoyageModel:   cfg.Voyage.Model,
+		OpenAIAPIKey:  cfg.OpenAI.APIKey,
+		OpenAIModel:   cfg.OpenAI.Model,
+		OpenAIBaseURL: cfg.OpenAI.BaseURL,
+		OpenAIDim:     cfg.OpenAI.Dim,
 		RerankerModel: cfg.RerankerModel,
 		VectorDim:     cfg.Voyage.Dim,
 	}
@@ -80,6 +88,11 @@ func buildProvider(ctx context.Context, cfg *RuntimeConfig) (rag.Provider, error
 			return nil, fmt.Errorf("RAG_VOYAGE_API_KEY is required for voyage embedder")
 		}
 		embedder = rag.NewVoyageEmbeddingClient(cfg.VoyageAPIKey, cfg.VoyageModel, cfg.VectorDim)
+	case "openai":
+		if cfg.OpenAIModel == "" {
+			return nil, fmt.Errorf("RAG_OPENAI_MODEL is required for the openai embedder")
+		}
+		embedder = rag.NewOpenAIEmbeddingClient(cfg.OpenAIAPIKey, cfg.OpenAIModel, cfg.OpenAIBaseURL, cfg.OpenAIDim)
 	default:
 		return nil, fmt.Errorf("unsupported embedder: %s", cfg.Embedder)
 	}

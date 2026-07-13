@@ -1456,6 +1456,13 @@
   margin-bottom: 6px;
 }
 
+.field-hint {
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
 .field-label {
   font-size: 12.5px;
   color: var(--text-dim);

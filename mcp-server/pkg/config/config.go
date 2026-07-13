@@ -23,12 +23,23 @@ type VoyageConfig struct {
 	Dim    int    `yaml:"dim"`
 }
 
+// OpenAIConfig holds settings for any OpenAI-compatible embeddings endpoint
+// (OpenAI, Together, Jina, Ollama, LiteLLM, etc.). BaseURL points at the
+// provider; empty means OpenAI's default.
+type OpenAIConfig struct {
+	APIKey  string `yaml:"api_key"`
+	Model   string `yaml:"model"`
+	BaseURL string `yaml:"base_url"`
+	Dim     int    `yaml:"dim"`
+}
+
 // Config holds all configurable settings for the RAG server. Fields use
 // yaml struct tags so the struct can be marshalled/unmarshalled directly.
 type Config struct {
 	VectorStore   string       `yaml:"vector_store"`
 	Embedder      string       `yaml:"embedder"`
 	Voyage        VoyageConfig `yaml:"voyage"`
+	OpenAI        OpenAIConfig `yaml:"openai"`
 	PGVectorDSN   string       `yaml:"pgvector_dsn"`
 	QdrantURL     string       `yaml:"qdrant_url"`
 	QdrantAPIKey  string       `yaml:"qdrant_api_key"`
@@ -173,6 +184,20 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("RAG_VOYAGE_MODEL"); v != "" {
 		cfg.Voyage.Model = v
+	}
+	if v := os.Getenv("RAG_OPENAI_API_KEY"); v != "" {
+		cfg.OpenAI.APIKey = v
+	}
+	if v := os.Getenv("RAG_OPENAI_MODEL"); v != "" {
+		cfg.OpenAI.Model = v
+	}
+	if v := os.Getenv("RAG_OPENAI_BASE_URL"); v != "" {
+		cfg.OpenAI.BaseURL = v
+	}
+	if v := os.Getenv("RAG_OPENAI_DIM"); v != "" {
+		if d, err := strconv.Atoi(v); err == nil && d > 0 {
+			cfg.OpenAI.Dim = d
+		}
 	}
 	if v := os.Getenv("RAG_RERANKER_MODEL"); v != "" {
 		cfg.RerankerModel = v

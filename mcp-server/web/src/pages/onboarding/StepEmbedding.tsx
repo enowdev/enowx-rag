@@ -22,17 +22,23 @@ const embedders: {
     meta: 'cloud · 1024-dim · rerank-2.5',
   },
   {
+    id: 'openai',
+    name: 'OpenAI-compatible',
+    desc: 'Any /v1/embeddings API — OpenAI, Together, Jina, Mistral, a local Ollama, LiteLLM, etc. Set the base URL and model.',
+    meta: 'cloud or local · custom base URL',
+  },
+  {
     id: 'tei',
-    name: 'TEI',
-    desc: 'Text Embeddings Inference server. Self-hosted, runs locally via Docker for zero-cost inference.',
-    meta: 'self-hosted · Docker · :8081',
+    name: 'TEI (self-hosted)',
+    desc: 'Text Embeddings Inference server — run any local model (BGE, GTE, E5, nomic…) via Docker. The wizard just needs its URL.',
+    meta: 'self-hosted · any local model · :8081',
   },
 ]
 
 export function StepEmbedding({ cfg, updateCfg, onBack, onNext }: StepEmbeddingProps) {
   const [revealKey, setRevealKey] = useState(false)
-  const canProceed = cfg.embedder !== '' &&
-    (cfg.embedder === 'tei' || cfg.embedder === 'voyage')
+  const canProceed = cfg.embedder === 'voyage' || cfg.embedder === 'tei' ||
+    (cfg.embedder === 'openai' && cfg.openaiModel.trim() !== '' && cfg.openaiBaseURL.trim() !== '')
 
   return (
     <div className="card">
@@ -41,9 +47,9 @@ export function StepEmbedding({ cfg, updateCfg, onBack, onNext }: StepEmbeddingP
         <span className="step-badge mono">3 / 7</span>
       </div>
       <div className="card-body">
-        <p>Select the service that will generate vector embeddings from your text. Voyage AI is recommended for production quality.</p>
+        <p>Select the service that will generate vector embeddings from your text. Voyage AI is recommended for production quality; OpenAI-compatible covers most other APIs and local Ollama; TEI runs any local model.</p>
 
-        <div className="cards cards-2">
+        <div className="cards cards-3">
           {embedders.map((p) => (
             <div
               key={p.id}
@@ -120,9 +126,78 @@ export function StepEmbedding({ cfg, updateCfg, onBack, onNext }: StepEmbeddingP
           </>
         )}
 
+        {cfg.embedder === 'openai' && (
+          <>
+            <div className="field">
+              <label>Base URL</label>
+              <input
+                className="input mono"
+                type="text"
+                value={cfg.openaiBaseURL}
+                onChange={(e) => updateCfg({ openaiBaseURL: e.target.value })}
+                placeholder="https://api.openai.com/v1"
+              />
+              <div className="field-hint">
+                The provider's <code className="mono">/v1</code> endpoint. Examples: OpenAI, Together,
+                Jina, or a local Ollama at <code className="mono">http://localhost:11434/v1</code>.
+              </div>
+            </div>
+
+            <div className="field">
+              <label>API Key <span className="mono" style={{ color: 'var(--text-faint)' }}>(leave empty for local/no-auth)</span></label>
+              <div className="input-wrapper">
+                <Key size={15} strokeWidth={1.5} className="input-icon" />
+                <input
+                  className="input mono with-icon"
+                  type={revealKey ? 'text' : 'password'}
+                  value={cfg.openaiAPIKey}
+                  onChange={(e) => updateCfg({ openaiAPIKey: e.target.value })}
+                  placeholder="sk-… (or empty for a local endpoint)"
+                />
+                <button className="reveal-btn" onClick={() => setRevealKey(!revealKey)} title={revealKey ? 'Hide' : 'Reveal'}>
+                  {revealKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="field-row">
+              <div className="field">
+                <label>Model</label>
+                <input
+                  className="input mono"
+                  type="text"
+                  value={cfg.openaiModel}
+                  onChange={(e) => updateCfg({ openaiModel: e.target.value })}
+                  placeholder="text-embedding-3-small"
+                />
+              </div>
+              <div className="field">
+                <label>Dimension <span className="mono" style={{ color: 'var(--text-faint)' }}>(0 = auto)</span></label>
+                <input
+                  className="input mono"
+                  type="number"
+                  value={cfg.openaiDim}
+                  onChange={(e) => updateCfg({ openaiDim: parseInt(e.target.value) || 0 })}
+                  min={0}
+                  max={4096}
+                  step={128}
+                />
+              </div>
+            </div>
+
+            <div className="warn-box">
+              <AlertTriangle size={16} className="warn-icon" />
+              <div className="warn-text">
+                <b>Re-index required.</b> Changing the model or dimension after indexing needs a full
+                re-index — vectors of different models/dimensions can't share a collection.
+              </div>
+            </div>
+          </>
+        )}
+
         {cfg.embedder === 'tei' && (
           <>
-            <div className="field" style={{ marginBottom: 0 }}>
+            <div className="field">
               <label>TEI Server URL</label>
               <input
                 className="input mono"
@@ -131,6 +206,10 @@ export function StepEmbedding({ cfg, updateCfg, onBack, onNext }: StepEmbeddingP
                 onChange={(e) => updateCfg({ teiURL: e.target.value })}
                 placeholder="http://localhost:8081"
               />
+              <div className="field-hint">
+                TEI is a server, not a model — run it with any embedding model you like (BGE, GTE, E5,
+                nomic-embed, …). Start it via Docker, then point this URL at it.
+              </div>
             </div>
 
             <div className="warn-box">

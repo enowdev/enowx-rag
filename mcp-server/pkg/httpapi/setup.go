@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/enowdev/enowx-rag/pkg/config"
+	"github.com/enowdev/enowx-rag/pkg/rag"
 )
 
 // --- Request / response types for setup wizard endpoints ---
@@ -19,16 +20,20 @@ import (
 // /apply. It mirrors config.Config but uses flat JSON field names that the
 // React wizard sends.
 type setupConfigRequest struct {
-	VectorStore  string `json:"vector_store"`
-	Embedder     string `json:"embedder"`
-	VoyageAPIKey string `json:"voyage_api_key"`
-	VoyageModel  string `json:"voyage_model"`
-	VoyageDim    int    `json:"voyage_dim"`
-	PGVectorDSN  string `json:"pgvector_dsn"`
-	QdrantURL    string `json:"qdrant_url"`
-	QdrantAPIKey string `json:"qdrant_api_key"`
-	ChromaURL    string `json:"chroma_url"`
-	TEIURL       string `json:"tei_url"`
+	VectorStore   string `json:"vector_store"`
+	Embedder      string `json:"embedder"`
+	VoyageAPIKey  string `json:"voyage_api_key"`
+	VoyageModel   string `json:"voyage_model"`
+	VoyageDim     int    `json:"voyage_dim"`
+	OpenAIAPIKey  string `json:"openai_api_key"`
+	OpenAIModel   string `json:"openai_model"`
+	OpenAIBaseURL string `json:"openai_base_url"`
+	OpenAIDim     int    `json:"openai_dim"`
+	PGVectorDSN   string `json:"pgvector_dsn"`
+	QdrantURL     string `json:"qdrant_url"`
+	QdrantAPIKey  string `json:"qdrant_api_key"`
+	ChromaURL     string `json:"chroma_url"`
+	TEIURL        string `json:"tei_url"`
 }
 
 // toConfig converts the flat wizard request into a config.Config struct.
@@ -48,6 +53,12 @@ func (r *setupConfigRequest) toConfig() *config.Config {
 			APIKey: r.VoyageAPIKey,
 			Model:  model,
 			Dim:    dim,
+		},
+		OpenAI: config.OpenAIConfig{
+			APIKey:  r.OpenAIAPIKey,
+			Model:   r.OpenAIModel,
+			BaseURL: r.OpenAIBaseURL,
+			Dim:     r.OpenAIDim,
 		},
 		PGVectorDSN:   r.PGVectorDSN,
 		QdrantURL:     r.QdrantURL,
@@ -233,6 +244,13 @@ func testEmbedder(ctx context.Context, req *setupConfigRequest) componentResult 
 		ok, msg := testTEIEmbed(ctx, teiURL)
 		return componentResult{OK: ok, Message: msg, LatencyMs: time.Since(start).Milliseconds()}
 
+	case "openai":
+		if req.OpenAIModel == "" {
+			return componentResult{OK: false, Message: "openai_model is required", LatencyMs: 0}
+		}
+		ok, msg := testOpenAIEmbed(ctx, req.OpenAIAPIKey, req.OpenAIModel, req.OpenAIBaseURL)
+		return componentResult{OK: ok, Message: msg, LatencyMs: time.Since(start).Milliseconds()}
+
 	default:
 		return componentResult{OK: false, Message: fmt.Sprintf("unsupported embedder: %s", req.Embedder), LatencyMs: 0}
 	}
@@ -280,6 +298,25 @@ func testVoyageEmbed(ctx context.Context, apiKey, model string) (bool, string) {
 		return false, fmt.Sprintf("Voyage AI API returned HTTP %d", resp.StatusCode)
 	}
 	return true, fmt.Sprintf("Voyage AI API connected (model: %s)", model)
+}
+
+// testOpenAIEmbed sends a minimal embedding request to an OpenAI-compatible
+// endpoint to verify reachability, model, and (if provided) the API key. It
+// reuses the rag provider so URL normalization matches production behavior.
+func testOpenAIEmbed(ctx context.Context, apiKey, model, baseURL string) (bool, string) {
+	client := rag.NewOpenAIEmbeddingClient(apiKey, model, baseURL, 0)
+	vecs, err := client.Embed(ctx, []string{"test"})
+	if err != nil {
+		if strings.Contains(err.Error(), "401") {
+			return false, "OpenAI API key is invalid or missing"
+		}
+		return false, fmt.Sprintf("cannot reach embeddings endpoint — %s", err)
+	}
+	dim := 0
+	if len(vecs) == 1 {
+		dim = len(vecs[0])
+	}
+	return true, fmt.Sprintf("OpenAI-compatible endpoint connected (model: %s, dim: %d)", model, dim)
 }
 
 // testTEIEmbed sends a minimal embedding request to the TEI server to

@@ -50,6 +50,19 @@ func mcpServerEntry() (mcpEntry, error) {
 		}
 	case "tei":
 		env["RAG_TEI_URL"] = cfg.TEIURL
+	case "openai":
+		if cfg.OpenAI.APIKey != "" {
+			env["RAG_OPENAI_API_KEY"] = cfg.OpenAI.APIKey
+		}
+		if cfg.OpenAI.Model != "" {
+			env["RAG_OPENAI_MODEL"] = cfg.OpenAI.Model
+		}
+		if cfg.OpenAI.BaseURL != "" {
+			env["RAG_OPENAI_BASE_URL"] = cfg.OpenAI.BaseURL
+		}
+		if cfg.OpenAI.Dim > 0 {
+			env["RAG_OPENAI_DIM"] = fmt.Sprintf("%d", cfg.OpenAI.Dim)
+		}
 	}
 
 	return mcpEntry{Command: exe, Env: env}, nil
