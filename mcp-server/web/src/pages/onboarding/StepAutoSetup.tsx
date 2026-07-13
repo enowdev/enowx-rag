@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Copy, Check, Terminal } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, Check, Terminal, CheckCircle2 } from 'lucide-react'
 import type { DraftConfig } from './types'
-import { generateDockerCompose, generateCommands } from './types'
+import { generateDockerCompose, generateCommands, localServices } from './types'
 
 interface StepAutoSetupProps {
   cfg: DraftConfig
@@ -12,6 +12,8 @@ interface StepAutoSetupProps {
 export function StepAutoSetup({ cfg, onBack, onNext }: StepAutoSetupProps) {
   const [copied, setCopied] = useState<'compose' | 'commands' | null>(null)
 
+  const services = localServices(cfg)
+  const needsDocker = services.length > 0
   const composeContent = generateDockerCompose(cfg)
   const commandsContent = generateCommands(cfg)
 
@@ -25,31 +27,32 @@ export function StepAutoSetup({ cfg, onBack, onNext }: StepAutoSetupProps) {
   return (
     <div className="card">
       <div className="card-head">
-        <h2>Auto Setup</h2>
+        <h2>Local Backend</h2>
         <span className="step-badge mono">5 / 7</span>
-        <span className="card-hint">{cfg.deployment === 'local' ? 'Local backend' : 'Cloud / Existing'}</span>
+        <span className="card-hint">{needsDocker ? `Docker: ${services.join(', ')}` : 'Nothing to run locally'}</span>
       </div>
       <div className="card-body">
-        {cfg.deployment === 'cloud' ? (
+        {!needsDocker ? (
           <>
             <p>
-              You chose a <b>cloud / existing backend</b>, so there is nothing to spin up locally.
-              Make sure your vector store and embedder are reachable at the URLs you entered, then
-              continue — the connection was verified in the previous step.
+              Your vector store and embedder are all <b>cloud / API / remote</b> — nothing needs to run
+              on this machine via Docker. You can continue.
             </p>
             <div className="cli-hint">
-              <Terminal size={16} className="cli-hint-icon" />
+              <CheckCircle2 size={16} className="cli-hint-icon" style={{ color: 'var(--good)' }} />
               <div className="d-text">
-                No local Docker setup is needed for cloud / existing backends. If you later want a
-                local backend instead, go back and pick <b>Local (Docker)</b>.
+                No local backend required. (A hosted Qdrant and the Voyage embedding API both run in the
+                cloud.) If you later want to self-host, go back and point the vector store or embedder at
+                a <code className="mono">localhost</code> URL.
               </div>
             </div>
           </>
         ) : (
           <>
             <p>
-              Based on your selections, here is the generated <code className="mono">docker-compose.yml</code> and the
-              commands to start your local backend. Commands are shown for review — they are <b>not</b> executed automatically.
+              These components run locally via Docker: <b>{services.join(', ')}</b>. Copy the
+              <code className="mono"> docker-compose.yml</code> and commands below and run them yourself in a
+              terminal — they are <b>not</b> executed automatically.
             </p>
 
             {/* Docker compose YAML */}

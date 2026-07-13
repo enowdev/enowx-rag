@@ -92,24 +92,6 @@ export function StepVectorStore({ cfg, updateCfg, onBack, onNext }: StepVectorSt
 
         {cfg.vectorStore && (
           <>
-            <div className="field">
-              <label>Deployment</label>
-              <div className="pill-group">
-                <button
-                  className={`pill ${cfg.deployment === 'local' ? 'active' : ''}`}
-                  onClick={() => updateCfg({ deployment: 'local' })}
-                >
-                  Local (Docker)
-                </button>
-                <button
-                  className={`pill ${cfg.deployment === 'cloud' ? 'active' : ''}`}
-                  onClick={() => updateCfg({ deployment: 'cloud' })}
-                >
-                  Cloud / Existing
-                </button>
-              </div>
-            </div>
-
             <div className="field" style={{ marginBottom: 0 }}>
               <label>{getEndpointLabel()}</label>
               <input

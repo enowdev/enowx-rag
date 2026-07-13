@@ -2,12 +2,10 @@
 
 export type VectorStoreProvider = 'pgvector' | 'qdrant' | 'chroma'
 export type EmbedderProvider = 'voyage' | 'tei'
-export type DeploymentMode = 'local' | 'cloud'
 
 /** Draft configuration that the wizard collects across all steps. */
 export interface DraftConfig {
   vectorStore: VectorStoreProvider | ''
-  deployment: DeploymentMode
   pgvectorDSN: string
   qdrantURL: string
   qdrantAPIKey: string
@@ -21,7 +19,6 @@ export interface DraftConfig {
 
 export const defaultDraft: DraftConfig = {
   vectorStore: '',
-  deployment: 'local',
   pgvectorDSN: 'postgresql://enowdev@localhost:5432/enowxrag',
   qdrantURL: 'http://localhost:6333',
   qdrantAPIKey: '',
@@ -41,7 +38,7 @@ export const STEP_LABELS: Record<Step, string> = {
   vector: 'Vector Store',
   embedding: 'Embedding',
   test: 'Test',
-  setup: 'Auto Setup',
+  setup: 'Local Backend',
   install: 'Install',
   done: 'Done',
 }
@@ -62,12 +59,29 @@ export function draftToRequest(cfg: DraftConfig): import('../../lib/api').SetupA
   }
 }
 
-/** Generate docker-compose YAML content based on draft config. */
-export function generateDockerCompose(cfg: DraftConfig): string {
-  const services: string[] = []
+/** True when a URL points at the local machine (needs a local Docker service). */
+function isLocalURL(url: string): boolean {
+  return /localhost|127\.0\.0\.1|0\.0\.0\.0|::1/.test(url)
+}
 
-  if (cfg.vectorStore === 'pgvector') {
-    services.push(`  postgres:
+/**
+ * Returns the docker-compose service names that must actually run locally for
+ * this config. A remote vector store (e.g. hosted Qdrant) or an API embedder
+ * (Voyage) needs no container, so it is omitted. When the result is empty,
+ * nothing needs Docker and the Local Backend step can be skipped.
+ */
+export function localServices(cfg: DraftConfig): string[] {
+  const names: string[] = []
+  if (cfg.vectorStore === 'pgvector' && isLocalURL(cfg.pgvectorDSN)) names.push('postgres')
+  if (cfg.vectorStore === 'qdrant' && isLocalURL(cfg.qdrantURL)) names.push('qdrant')
+  if (cfg.vectorStore === 'chroma' && isLocalURL(cfg.chromaURL)) names.push('chroma')
+  // Voyage is a cloud API — never needs Docker. Only self-hosted TEI does.
+  if (cfg.embedder === 'tei' && isLocalURL(cfg.teiURL)) names.push('tei-embedding')
+  return names
+}
+
+const SERVICE_BLOCKS: Record<string, string> = {
+  postgres: `  postgres:
     image: pgvector/pgvector:pg16
     ports:
       - "5432:5432"
@@ -75,59 +89,50 @@ export function generateDockerCompose(cfg: DraftConfig): string {
       POSTGRES_DB: enowxrag
       POSTGRES_USER: enowdev
     volumes:
-      - pgdata:/var/lib/postgresql/data`)
-  }
-
-  if (cfg.vectorStore === 'qdrant') {
-    services.push(`  qdrant:
+      - pgdata:/var/lib/postgresql/data`,
+  qdrant: `  qdrant:
     image: qdrant/qdrant:latest
     ports:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - qdrant_data:/qdrant/storage`)
-  }
-
-  if (cfg.vectorStore === 'chroma') {
-    services.push(`  chroma:
+      - qdrant_data:/qdrant/storage`,
+  chroma: `  chroma:
     image: chromadb/chroma:latest
     ports:
       - "8000:8000"
     volumes:
-      - chroma_data:/chroma/chroma`)
-  }
-
-  if (cfg.embedder === 'tei') {
-    services.push(`  tei-embedding:
+      - chroma_data:/chroma/chroma`,
+  'tei-embedding': `  tei-embedding:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
     ports:
       - "8081:80"
     volumes:
-      - tei_data:/data`)
-  }
+      - tei_data:/data`,
+}
 
-  const volumes: string[] = []
-  if (cfg.vectorStore === 'pgvector') volumes.push('  pgdata:')
-  if (cfg.vectorStore === 'qdrant') volumes.push('  qdrant_data:')
-  if (cfg.vectorStore === 'chroma') volumes.push('  chroma_data:')
-  if (cfg.embedder === 'tei') volumes.push('  tei_data:')
+const SERVICE_VOLUMES: Record<string, string> = {
+  postgres: '  pgdata:',
+  qdrant: '  qdrant_data:',
+  chroma: '  chroma_data:',
+  'tei-embedding': '  tei_data:',
+}
 
+/** Generate docker-compose YAML for only the services that run locally. */
+export function generateDockerCompose(cfg: DraftConfig): string {
+  const names = localServices(cfg)
+  const services = names.map((n) => SERVICE_BLOCKS[n])
+  const volumes = names.map((n) => SERVICE_VOLUMES[n])
   return `version: "3.9"\n\nservices:\n${services.join('\n\n')}\n${volumes.length > 0 ? `\nvolumes:\n${volumes.join('\n')}` : ''}`
 }
 
 /** Generate shell commands to start the local backend. */
 export function generateCommands(cfg: DraftConfig): string {
+  const names = localServices(cfg)
   const lines: string[] = ['# Start local backend']
-  const serviceNames: string[] = []
+  lines.push(`docker compose up -d ${names.join(' ')}`)
 
-  if (cfg.vectorStore === 'pgvector') serviceNames.push('postgres')
-  if (cfg.vectorStore === 'qdrant') serviceNames.push('qdrant')
-  if (cfg.vectorStore === 'chroma') serviceNames.push('chroma')
-  if (cfg.embedder === 'tei') serviceNames.push('tei-embedding')
-
-  lines.push(`docker compose up -d ${serviceNames.join(' ')}`)
-
-  if (cfg.vectorStore === 'pgvector') {
+  if (names.includes('postgres')) {
     lines.push('')
     lines.push('# Verify pgvector extension')
     lines.push('psql -h localhost -U enowdev -d enowxrag \\')
