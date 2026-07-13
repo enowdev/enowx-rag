@@ -89,14 +89,22 @@ When running in `--serve` mode, the following REST endpoints are available:
 | `DELETE` | `/api/projects/{id}/points/{pointId}` | Delete a single chunk |
 | `POST` | `/api/projects/{id}/reindex` | Re-index a project directory (body: `{"directory": "/path"}`) |
 | `DELETE` | `/api/projects/{id}` | Delete a project collection |
-| `POST` | `/api/search` | Search (body: `{"project_id", "query", "k", "recall", "hybrid", "rerank"}`) |
+| `POST` | `/api/search` | Search (body: `{"project_id", "query", "k", "recall", "hybrid", "rerank", "compress"}`) |
 | `GET` | `/api/stats` | Aggregate stats (total projects, chunks, embed model) |
+| `GET` | `/api/metrics` | Query metrics: latency (avg/p50/p95), token usage, backend, `persistent` flag |
 | `GET` | `/api/events` | SSE stream of realtime events (index, search, etc.) |
-| `POST` | `/api/setup/test` | Test vector store + embedder connectivity |
-| `POST` | `/api/setup/apply` | Save config to `~/.enowx-rag/config.yaml` |
+| `POST` | `/api/setup/test` | Test connectivity (localhost or admin token required) |
+| `POST` | `/api/setup/apply` | Save config to `~/.enowx-rag/config.yaml` (localhost or admin token required) |
 | `GET` | `/api/setup/status` | Check if config exists |
 
 Non-API routes serve the embedded React SPA (client-side routing for `/playground`, `/chunks`, `/setup`, etc.).
+
+**Query metrics** are recorded for every search and exposed at `/api/metrics`:
+latency percentiles, Voyage token usage (embed + rerank), and — for hybrid
+searches on pgvector — the dense/lexical retrieval breakdown. Metrics are
+persisted durably to a local SQLite file (`~/.enowx-rag/metrics.db`, pure-Go,
+no external service), so they survive restarts on any backend. If the file can't
+be opened, metrics fall back to in-memory (`"persistent": false`).
 
 Example:
 
@@ -615,12 +623,28 @@ enowx-rag/
 
 | Vector store | Embedder | Status |
 | --- | --- | --- |
-| Qdrant | TEI (self-hosted) | Ready |
-| Qdrant | Voyage AI | Ready |
-| Chroma | TEI (self-hosted) | Ready |
-| Chroma | Voyage AI | Ready |
-| pgvector | TEI (self-hosted) | Ready |
-| pgvector | Voyage AI | Ready (recommended for hybrid search) |
+| Qdrant | TEI (self-hosted) | Supported |
+| Qdrant | Voyage AI | Supported |
+| pgvector | TEI (self-hosted) | Supported |
+| pgvector | Voyage AI | Supported — recommended (hybrid search + retrieval breakdown) |
+| Chroma | TEI / Voyage AI | Experimental — see note below |
+
+**Feature support by backend:**
+
+| Feature | Qdrant | pgvector | Chroma |
+| --- | :---: | :---: | :---: |
+| Index / semantic search / delete | ✅ | ✅ | ⚠️ |
+| Project list + stats (dashboard) | ✅ | ✅ | ⚠️ |
+| Hybrid search (dense + lexical RRF) | — | ✅ | — |
+| Retrieval breakdown (dense/lexical) | — | ✅ | — |
+| Token metrics (Voyage) | ✅ | ✅ | ✅ |
+
+> **Chroma is experimental.** The provider targets Chroma's legacy `/api/v1`
+> REST API and has only been tested against mocks, not a live server. Chroma
+> ≥ 0.6 moved to `/api/v2` (tenant/database paths, UUID-addressed collections),
+> so the current provider may not work against modern Chroma. Use **Qdrant** or
+> **pgvector** for a supported setup. Contributions to port Chroma to `/api/v2`
+> are welcome.
 
 ## Embedding options
 

@@ -12,6 +12,12 @@ import (
 
 // ChromaProvider implements a lightweight REST Chroma provider with no generated client.
 // It assumes the embedding is done via an external TEI/OpenAI client.
+//
+// EXPERIMENTAL: this provider targets Chroma's legacy /api/v1 REST API and is
+// only covered by mock-based tests, not verified against a live server. Chroma
+// >= 0.6 moved to /api/v2 (tenant/database path segments, UUID-addressed
+// collections), so these calls may fail against modern Chroma. Prefer Qdrant or
+// pgvector for a supported setup. Porting to /api/v2 is tracked as future work.
 type ChromaProvider struct {
 	baseURL  string
 	embedder EmbeddingClient

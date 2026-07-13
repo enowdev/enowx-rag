@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Query metrics: latency (avg/p50/p95), Voyage token usage, and dense/lexical
+  retrieval breakdown, exposed at `GET /api/metrics` and shown on the dashboard.
+  Persisted durably to `~/.enowx-rag/metrics.db` (pure-Go SQLite, no cgo), so
+  metrics survive restarts on any backend.
+- `compress` search option: deterministic near-duplicate result dedup.
+- `enowx-rag setup [--run]` CLI subcommand to generate/run the backend
+  docker-compose (never over HTTP).
+- Efficient project chunk counts (`points/count` / `COUNT(*)` / `/count`),
+  making `/api/projects` and `/api/stats` fast on large Qdrant/pgvector.
+- Qdrant & Chroma now implement project listing, so the dashboard works on all
+  backends, not only pgvector.
+
+### Changed
+- MCP `rag_semantic_search` / `rag_retrieve_context` now accept and apply
+  `hybrid`/`rerank`/`recall`/`compress` (hybrid & rerank default on).
+- Dashboard shows only real, backend-sourced data — removed all mock/hardcoded
+  metrics, dead controls, and the fake auto-setup simulation.
+
+### Security
+- `/api/setup/apply` and `/api/setup/test` require localhost or a valid admin
+  token; `/api/setup/apply` no longer echoes the saved config (API key) back.
+- Removed the deprecated `middleware.RealIP` (X-Forwarded-For spoofing risk).
+
+### Notes
+- The Chroma provider is **experimental** (legacy `/api/v1`, mock-tested only);
+  use Qdrant or pgvector for a supported setup.
+
 ## [0.1.0] - 2026-07-12
 
 First tagged release. A per-project RAG memory skill and MCP server for AI

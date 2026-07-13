@@ -105,18 +105,30 @@ type Service struct {
 	indexer    *indexer.Indexer
 	events     *EventBus
 	embedModel string // optional: set by main.go for stats endpoint
-	metrics    *Metrics
-	backend    string // vector store name (e.g. "qdrant"), set by main.go
+	metrics      *Metrics
+	metricsStore MetricsStore // optional durable metrics; nil = in-memory only
+	backend      string       // vector store name (e.g. "qdrant"), set by main.go
 }
 
-// MetricsStore is an optional interface a provider may implement to persist
-// query metrics durably. No provider implements it yet: a vector-store provider
-// lives in package rag, which cannot import core (that would be an import
-// cycle), so durable persistence will require a separate persister injected
-// into Service rather than a provider method. Until then Service type-asserts
-// the provider here and, finding nothing, reports Persistent=false honestly.
+// MetricsStore is an optional durable sink for query metrics, injected into
+// Service (not a provider method — that would create a rag→core import cycle).
+// When set, Service persists each query and reads durable aggregates so the
+// dashboard survives restarts; when nil, metrics are in-memory only and the
+// snapshot reports Persistent=false. SQLiteMetricsStore is the default
+// implementation and works with any vector-store backend.
 type MetricsStore interface {
+	// PersistQueryMetric durably records one query's latency and composition.
 	PersistQueryMetric(ctx context.Context, latencyMs float64, comp QueryComposition) error
+	// Summary returns durable aggregates across all persisted queries.
+	Summary(ctx context.Context) (MetricsSummary, error)
+}
+
+// MetricsSummary holds durable metric aggregates read back from a MetricsStore.
+type MetricsSummary struct {
+	QueryCount   int64
+	AvgLatencyMs float64
+	P50LatencyMs float64
+	P95LatencyMs float64
 }
 
 // MetricsSnapshot is the JSON-serializable metrics response returned by
@@ -178,6 +190,12 @@ func (s *Service) SetBackend(name string) {
 	s.backend = name
 }
 
+// SetMetricsStore injects a durable metrics store. When set, query metrics are
+// persisted and the snapshot reports Persistent=true with durable aggregates.
+func (s *Service) SetMetricsStore(store MetricsStore) {
+	s.metricsStore = store
+}
+
 // MetricsSnapshot returns a point-in-time view of query metrics: in-memory
 // latency aggregates and query count, plus token usage read from the provider
 // and reranker when they implement rag.TokenCounter. Persistent reflects
@@ -192,7 +210,17 @@ func (s *Service) MetricsSnapshot(ctx context.Context) MetricsSnapshot {
 	if tc, ok := s.reranker.(rag.TokenCounter); ok {
 		rerankTok = tc.TokensUsed()
 	}
-	_, persistent := s.provider.(MetricsStore)
+	// When a durable store is configured, prefer its aggregates so counts and
+	// latencies survive restarts. Fall back to in-memory on read error.
+	persistent := s.metricsStore != nil
+	if persistent {
+		if sum, err := s.metricsStore.Summary(ctx); err == nil {
+			count = sum.QueryCount
+			avg = sum.AvgLatencyMs
+			p50 = sum.P50LatencyMs
+			p95 = sum.P95LatencyMs
+		}
+	}
 
 	snap := MetricsSnapshot{
 		QueryCount:   count,
@@ -276,11 +304,12 @@ func (s *Service) Search(ctx context.Context, projectID, query string, opts Sear
 	defer func() {
 		comp.Results = len(out)
 		s.metrics.RecordQuery(latencyMs, comp)
-		if ms, ok := s.provider.(MetricsStore); ok {
+		if s.metricsStore != nil {
 			// Persist asynchronously so query latency is unaffected. A copy of
 			// comp is captured; failures are non-fatal.
 			c := comp
-			go func() { _ = ms.PersistQueryMetric(context.WithoutCancel(ctx), latencyMs, c) }()
+			lat := latencyMs
+			go func() { _ = s.metricsStore.PersistQueryMetric(context.WithoutCancel(context.Background()), lat, c) }()
 		}
 	}()
 

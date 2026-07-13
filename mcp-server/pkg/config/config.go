@@ -64,6 +64,16 @@ func Path() string {
 	return filepath.Join(home, ".enowx-rag", "config.yaml")
 }
 
+// MetricsDBPath returns the absolute path to the durable metrics database:
+// ~/.enowx-rag/metrics.db.
+func MetricsDBPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".enowx-rag", "metrics.db")
+	}
+	return filepath.Join(home, ".enowx-rag", "metrics.db")
+}
+
 // Load reads the config file from Path() and returns a populated *Config.
 // If the file does not exist, Load returns an error (this triggers the
 // onboarding wizard in HTTP mode). Env var overrides are applied on top of

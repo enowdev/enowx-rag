@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -200,6 +201,19 @@ func main() {
 	svc := buildService(provider, reranker, idx)
 	svc.SetEmbedModel(cfg.VoyageModel)
 	svc.SetBackend(cfg.VectorStore)
+
+	// Durable metrics: a local SQLite file (pure-Go, no cgo) that works with any
+	// vector-store backend. If it can't be opened, fall back to in-memory
+	// metrics rather than failing startup.
+	metricsPath := config.MetricsDBPath()
+	if err := os.MkdirAll(filepath.Dir(metricsPath), 0o700); err == nil {
+		if store, err := core.NewSQLiteMetricsStore(metricsPath); err != nil {
+			fmt.Fprintf(os.Stderr, "metrics: durable store unavailable, using in-memory: %v\n", err)
+		} else {
+			svc.SetMetricsStore(store)
+			defer store.Close()
+		}
+	}
 
 	if *serve {
 		runHTTP(svc, *addr, cfg)
