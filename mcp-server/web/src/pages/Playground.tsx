@@ -106,14 +106,14 @@ export function Playground({ activeProject, sharedQuery, onSharedQueryChange }: 
         <span className="id mono">project_{activeProject || '—'}</span>
       </div>
 
-      <div className="cols" style={{ gridTemplateColumns: '2fr 1fr' }}>
+      <div className="cols pg-fill" style={{ gridTemplateColumns: '2fr 1fr' }}>
         {/* Main playground panel */}
-        <section className="panel" style={{ gridColumn: '1' }}>
+        <section className="panel pg-panel" style={{ gridColumn: '1' }}>
           <div className="panel-head">
             <h2>Retrieval playground</h2>
             <span className="hint">top-{k} · {rerank ? 'reranked' : 'semantic'}</span>
           </div>
-          <div className="panel-body">
+          <div className="panel-body pg-body">
             <div className="query-row">
               <input
                 className="query-input"
@@ -206,7 +206,7 @@ export function Playground({ activeProject, sharedQuery, onSharedQueryChange }: 
         </section>
 
         {/* Activity panel (SSE realtime) */}
-        <section className="panel" style={{ gridColumn: '2' }}>
+        <section className="panel pg-panel" style={{ gridColumn: '2' }}>
           <div className="panel-head">
             <h2>Activity</h2>
             <span className="hint" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -214,7 +214,7 @@ export function Playground({ activeProject, sharedQuery, onSharedQueryChange }: 
               {connected ? 'live' : 'connecting'}
             </span>
           </div>
-          <div className="panel-body" style={{ padding: '12px 15px' }}>
+          <div className="panel-body pg-activity-body" style={{ padding: '12px 15px' }}>
             {activityRows.length === 0 ? (
               <div style={{ color: 'var(--text-faint)', fontSize: '12px', padding: '12px 0' }}>
                 Waiting for events…

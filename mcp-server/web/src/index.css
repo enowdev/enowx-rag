@@ -4,8 +4,9 @@
 .app {
   display: grid;
   grid-template-columns: 232px 1fr;
-  min-height: 100vh;
-  align-items: start;
+  height: 100vh;
+  overflow: hidden;
+  align-items: stretch;
 }
 
 /* ===== Sidebar ===== */
@@ -177,17 +178,18 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  height: 100vh;
+  min-height: 0;
 }
 
 .topbar {
   height: 52px;
+  flex: none;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 0 22px;
-  position: sticky;
-  top: 0;
   background: var(--bg);
   z-index: 5;
 }
@@ -270,6 +272,9 @@
   flex-direction: column;
   gap: 18px;
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* ===== Page head ===== */
@@ -576,6 +581,39 @@
 .chip b {
   color: var(--text);
   font-weight: 600;
+}
+
+/* ===== Playground: fill one screen, scroll inside the panels ===== */
+/* The grid fills the remaining content height so panels don't push the page. */
+.pg-fill {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.pg-panel {
+  min-height: 0;
+  overflow: hidden; /* the panel body owns scrolling, not the panel */
+}
+
+/* Query row + toolbar stay pinned; the results list scrolls within the panel. */
+.pg-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pg-body .results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Activity log scrolls within its own panel. */
+.pg-activity-body {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* ===== Search results ===== */

@@ -74,12 +74,36 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* ===== Scrollbar ===== */
-.proj-list::-webkit-scrollbar {
-  width: 8px;
+/* ===== Scrollbar (theme-aware, applies to all scroll areas) ===== */
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
-.proj-list::-webkit-scrollbar-thumb {
+/* WebKit / Chromium */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
   background: var(--border-strong);
   border-radius: 8px;
+  /* transparent border creates padding so the thumb reads as a slim pill */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
