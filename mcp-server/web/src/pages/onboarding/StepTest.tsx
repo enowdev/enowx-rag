@@ -47,7 +47,7 @@ export function StepTest({ cfg, testResults, setTestResults, testPassed, onBack,
     <div className="card">
       <div className="card-head">
         <h2>Test Connection</h2>
-        <span className="step-badge mono">4 / 6</span>
+        <span className="step-badge mono">4 / 7</span>
         <span className="card-hint">POST /api/setup/test</span>
       </div>
       <div className="card-body">

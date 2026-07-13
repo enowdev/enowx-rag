@@ -67,7 +67,7 @@ export function StepVectorStore({ cfg, updateCfg, onBack, onNext }: StepVectorSt
     <div className="card">
       <div className="card-head">
         <h2>Choose a Vector Store</h2>
-        <span className="step-badge mono">2 / 6</span>
+        <span className="step-badge mono">2 / 7</span>
       </div>
       <div className="card-body">
         <p>Select the database that will store your vector embeddings. Each option supports full semantic search and metadata filtering.</p>

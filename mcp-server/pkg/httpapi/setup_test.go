@@ -689,3 +689,85 @@ func TestSetupApply_RemoteAllowedWithToken(t *testing.T) {
 		t.Errorf("setup/apply response leaked config/secret: %s", w.Body.String())
 	}
 }
+
+// TestInstallMCPEndpoint verifies POST /api/setup/install-mcp writes a merged
+// client config (loopback allowed) and reports the path.
+func TestInstallMCPEndpoint(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	// A saved config is required (mcpServerEntry loads it).
+	if err := writeTestConfig(tmp); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	body := `{"client_id":"cursor","scope":"global"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/install-mcp", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("install-mcp = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	// The cursor config should now exist under the temp HOME.
+	cursorPath := filepath.Join(tmp, ".cursor", "mcp.json")
+	data, err := os.ReadFile(cursorPath)
+	if err != nil {
+		t.Fatalf("cursor config not written: %v", err)
+	}
+	if !strings.Contains(string(data), "enowx-rag") {
+		t.Error("cursor config missing enowx-rag server")
+	}
+}
+
+// TestInstallMCPRemoteRejected verifies the endpoint is loopback-gated.
+func TestInstallMCPRemoteRejected(t *testing.T) {
+	t.Setenv("RAG_ADMIN_TOKEN", "")
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/install-mcp", strings.NewReader(`{"client_id":"cursor"}`))
+	req.RemoteAddr = "203.0.113.9:5555"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("remote install-mcp = %d, want 403", w.Code)
+	}
+}
+
+// TestMCPSnippetEndpoint verifies GET /api/setup/mcp-snippet returns a snippet.
+func TestMCPSnippetEndpoint(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	if err := writeTestConfig(tmp); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/mcp-snippet?client_id=codex", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("mcp-snippet = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	content, _ := resp["content"].(string)
+	if !strings.Contains(content, "[mcp_servers.enowx-rag]") {
+		t.Errorf("codex snippet should be TOML, got: %s", content)
+	}
+}
+
+// writeTestConfig writes a minimal ~/.enowx-rag/config.yaml under home.
+func writeTestConfig(home string) error {
+	dir := filepath.Join(home, ".enowx-rag")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	yaml := "vector_store: qdrant\nembedder: voyage\nqdrant_url: http://localhost:6333\nvoyage:\n  api_key: k\n  model: voyage-4\n"
+	return os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0o600)
+}

@@ -6,6 +6,7 @@ import { StepVectorStore } from './StepVectorStore'
 import { StepEmbedding } from './StepEmbedding'
 import { StepTest } from './StepTest'
 import { StepAutoSetup } from './StepAutoSetup'
+import { StepInstall } from './StepInstall'
 import { StepDone } from './StepDone'
 
 interface WizardProps {
@@ -127,6 +128,12 @@ export function Wizard({ onComplete, theme, onToggleTheme }: WizardProps) {
         {step === 'setup' && (
           <StepAutoSetup
             cfg={cfg}
+            onBack={back}
+            onNext={next}
+          />
+        )}
+        {step === 'install' && (
+          <StepInstall
             onBack={back}
             onNext={next}
           />

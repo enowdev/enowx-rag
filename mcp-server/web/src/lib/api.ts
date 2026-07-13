@@ -104,6 +104,35 @@ export interface SetupApplyRequest {
   tei_url?: string
 }
 
+export interface McpClient {
+  id: string
+  label: string
+  format: string
+  has_project: boolean
+  global_path: string
+}
+
+export interface InstallMcpResponse {
+  status: string
+  client: string
+  path: string
+  backed_up: boolean
+}
+
+export interface McpSnippetResponse {
+  client: string
+  path: string
+  format: string
+  content: string
+}
+
+export interface SkillGuideResponse {
+  note: string
+  source_file: string
+  targets: { client: string; dir: string }[]
+  commands: string[]
+}
+
 const API_BASE = '/api'
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
@@ -179,4 +208,18 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
     }),
+
+  mcpClients: () => fetchJSON<McpClient[]>(`${API_BASE}/setup/clients`),
+
+  installMcp: (req: { client_id: string; scope?: string; project_dir?: string }) =>
+    fetchJSON<InstallMcpResponse>(`${API_BASE}/setup/install-mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    }),
+
+  mcpSnippet: (clientId: string) =>
+    fetchJSON<McpSnippetResponse>(`${API_BASE}/setup/mcp-snippet?client_id=${encodeURIComponent(clientId)}`),
+
+  skillGuide: () => fetchJSON<SkillGuideResponse>(`${API_BASE}/setup/skill-guide`),
 }

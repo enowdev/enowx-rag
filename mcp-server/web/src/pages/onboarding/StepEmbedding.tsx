@@ -38,7 +38,7 @@ export function StepEmbedding({ cfg, updateCfg, onBack, onNext }: StepEmbeddingP
     <div className="card">
       <div className="card-head">
         <h2>Choose an Embedding Provider</h2>
-        <span className="step-badge mono">3 / 6</span>
+        <span className="step-badge mono">3 / 7</span>
       </div>
       <div className="card-body">
         <p>Select the service that will generate vector embeddings from your text. Voyage AI is recommended for production quality.</p>

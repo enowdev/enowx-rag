@@ -51,8 +51,15 @@ func NewRouter(svc *core.Service, ui fs.FS) http.Handler {
 			r.Use(LocalOrAdminMiddleware)
 			r.Post("/setup/test", h.SetupTest)
 			r.Post("/setup/apply", h.SetupApply)
+			// install-mcp writes to another tool's config file in the user's
+			// home dir — same risk class as /setup/apply, so gate it too.
+			r.Post("/setup/install-mcp", h.SetupInstallMCP)
 		})
 		r.Get("/setup/status", h.SetupStatus)
+		// Read-only helpers for the install step (no file writes).
+		r.Get("/setup/clients", h.SetupClients)
+		r.Get("/setup/mcp-snippet", h.SetupMCPSnippet)
+		r.Get("/setup/skill-guide", h.SetupSkillGuide)
 
 		// Unknown /api/ routes return 404 JSON (not SPA fallback)
 		r.NotFound(h.NotFound)

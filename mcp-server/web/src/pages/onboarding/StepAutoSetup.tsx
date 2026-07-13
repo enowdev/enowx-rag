@@ -26,7 +26,7 @@ export function StepAutoSetup({ cfg, onBack, onNext }: StepAutoSetupProps) {
     <div className="card">
       <div className="card-head">
         <h2>Auto Setup</h2>
-        <span className="step-badge mono">5 / 6</span>
+        <span className="step-badge mono">5 / 7</span>
         <span className="card-hint">{cfg.deployment === 'local' ? 'Local backend' : 'Cloud / Existing'}</span>
       </div>
       <div className="card-body">

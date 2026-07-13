@@ -39,7 +39,7 @@ export function StepWelcome({ onNext }: StepWelcomeProps) {
     <div className="card">
       <div className="card-head">
         <h2>Welcome to enowx-rag</h2>
-        <span className="step-badge mono">1 / 6</span>
+        <span className="step-badge mono">1 / 7</span>
         <span className="card-hint">First-run setup</span>
       </div>
       <div className="card-body">

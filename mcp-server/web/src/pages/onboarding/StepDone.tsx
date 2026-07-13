@@ -55,7 +55,7 @@ export function StepDone({ cfg, onBack, onComplete }: StepDoneProps) {
     <div className="card">
       <div className="card-head">
         <h2>Configuration Complete</h2>
-        <span className="step-badge mono">6 / 6</span>
+        <span className="step-badge mono">7 / 7</span>
         <span className="card-hint">POST /api/setup/apply</span>
       </div>
       <div className="card-body done-body">

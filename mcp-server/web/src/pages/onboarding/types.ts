@@ -33,7 +33,7 @@ export const defaultDraft: DraftConfig = {
   teiURL: 'http://localhost:8081',
 }
 
-export const STEPS = ['welcome', 'vector', 'embedding', 'test', 'setup', 'done'] as const
+export const STEPS = ['welcome', 'vector', 'embedding', 'test', 'setup', 'install', 'done'] as const
 export type Step = (typeof STEPS)[number]
 
 export const STEP_LABELS: Record<Step, string> = {
@@ -42,6 +42,7 @@ export const STEP_LABELS: Record<Step, string> = {
   embedding: 'Embedding',
   test: 'Test',
   setup: 'Auto Setup',
+  install: 'Install',
   done: 'Done',
 }
 
