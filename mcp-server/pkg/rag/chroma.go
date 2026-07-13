@@ -246,6 +246,20 @@ func (p *ChromaProvider) ListPoints(ctx context.Context, projectID string, metaF
 
 func (p *ChromaProvider) Close() error { return nil }
 
+// CountPoints returns the number of embeddings in a project's collection via
+// Chroma's count endpoint, avoiding a full get. Implements core.ProjectCounter.
+func (p *ChromaProvider) CountPoints(ctx context.Context, projectID string) (int, error) {
+	var count int
+	err := p.do(ctx, http.MethodGet, "/api/v1/collections/"+p.collectionName(projectID)+"/count", nil, &count)
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return count, nil
+}
+
 // ListProjectIDs returns the project IDs backed by this Chroma instance by
 // listing collections and stripping the "project_" prefix. Implements the
 // core.ProjectLister interface so ListProjects/Stats and the dashboard work on

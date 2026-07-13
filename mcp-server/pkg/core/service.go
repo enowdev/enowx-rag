@@ -448,20 +448,41 @@ func (s *Service) ListProjects(ctx context.Context) ([]ProjectStat, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Prefer an efficient count when the provider supports it. Otherwise
+		// fall back to counting via ListPoints (which scrolls every point with
+		// its payload — correct but slow for large projects).
+		counter, hasCounter := s.provider.(ProjectCounter)
 		stats := make([]ProjectStat, 0, len(ids))
 		for _, id := range ids {
-			points, err := s.provider.ListPoints(ctx, id, nil)
-			if err != nil {
-				continue
+			var count int
+			if hasCounter {
+				c, err := counter.CountPoints(ctx, id)
+				if err != nil {
+					continue
+				}
+				count = c
+			} else {
+				points, err := s.provider.ListPoints(ctx, id, nil)
+				if err != nil {
+					continue
+				}
+				count = len(points)
 			}
 			stats = append(stats, ProjectStat{
 				ProjectID:  id,
-				ChunkCount: len(points),
+				ChunkCount: count,
 			})
 		}
 		return stats, nil
 	}
 	return []ProjectStat{}, nil
+}
+
+// ProjectCounter is an optional interface for providers that can count points
+// in a project cheaply (e.g. Qdrant points/count, pgvector COUNT(*)), avoiding
+// a full ListPoints scroll just to size a project.
+type ProjectCounter interface {
+	CountPoints(ctx context.Context, projectID string) (int, error)
 }
 
 // ProjectLister is an optional interface that providers may implement to

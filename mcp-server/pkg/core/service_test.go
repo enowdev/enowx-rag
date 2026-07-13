@@ -623,6 +623,49 @@ func TestListProjects(t *testing.T) {
 	}
 }
 
+// countingMockProvider implements ProjectCounter and records whether the slow
+// ListPoints path was used, to verify ListProjects prefers CountPoints.
+type countingMockProvider struct {
+	mockProvider
+	countCalls     int
+	listPointsUsed bool
+}
+
+func (m *countingMockProvider) CountPoints(ctx context.Context, projectID string) (int, error) {
+	m.countCalls++
+	return 42, nil
+}
+
+func (m *countingMockProvider) ListPoints(ctx context.Context, projectID string, f map[string]string) ([]rag.PointInfo, error) {
+	m.listPointsUsed = true
+	return m.mockProvider.ListPoints(ctx, projectID, f)
+}
+
+// TestListProjectsUsesCounter verifies ListProjects uses the efficient
+// ProjectCounter path when available and does NOT scroll via ListPoints.
+func TestListProjectsUsesCounter(t *testing.T) {
+	p := &countingMockProvider{}
+	p.listedProjectIDs = []string{"a", "b"}
+	svc := NewService(p, nil, nil)
+
+	stats, err := svc.ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjects error: %v", err)
+	}
+	if len(stats) != 2 {
+		t.Fatalf("expected 2 projects, got %d", len(stats))
+	}
+	if stats[0].ChunkCount != 42 {
+		t.Errorf("expected count 42 from CountPoints, got %d", stats[0].ChunkCount)
+	}
+	if p.countCalls != 2 {
+		t.Errorf("expected CountPoints called twice, got %d", p.countCalls)
+	}
+	if p.listPointsUsed {
+		t.Error("ListPoints should NOT be used when ProjectCounter is available")
+	}
+}
+
 // TestIndexDocuments delegates to provider.Index.
 func TestIndexDocuments(t *testing.T) {
 	p := &mockProvider{}

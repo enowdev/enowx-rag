@@ -328,6 +328,27 @@ func (p *QdrantProvider) TokensUsed() int64 {
 	return 0
 }
 
+// CountPoints returns the number of points in a project's collection using
+// Qdrant's points/count endpoint, avoiding a full scroll. Implements
+// core.ProjectCounter. A missing collection counts as 0.
+func (p *QdrantProvider) CountPoints(ctx context.Context, projectID string) (int, error) {
+	var resp struct {
+		Result struct {
+			Count int `json:"count"`
+		} `json:"result"`
+	}
+	body := map[string]any{"exact": true}
+	err := p.do(ctx, http.MethodPost, "/collections/"+p.collectionName(projectID)+"/points/count", body, &resp)
+	if err != nil {
+		// Treat a missing collection as an empty project rather than an error.
+		if strings.Contains(err.Error(), "404") {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return resp.Result.Count, nil
+}
+
 // ListProjectIDs returns the project IDs backed by this Qdrant instance by
 // listing collections and stripping the "project_" prefix. This implements the
 // core.ProjectLister interface so ListProjects/Stats and the dashboard work on

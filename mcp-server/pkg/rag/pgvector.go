@@ -402,6 +402,17 @@ func (p *PGVectorProvider) TokensUsed() int64 {
 // at least one row in the project memory table. This implements the
 // core.ProjectLister interface, enabling GET /api/projects to enumerate
 // projects without prior knowledge.
+// CountPoints returns the number of rows for a project via COUNT(*), avoiding a
+// full row fetch. Implements core.ProjectCounter.
+func (p *PGVectorProvider) CountPoints(ctx context.Context, projectID string) (int, error) {
+	q := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE project_id = $1", p.table)
+	var n int
+	if err := p.pool.QueryRow(ctx, q, projectID).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (p *PGVectorProvider) ListProjectIDs(ctx context.Context) ([]string, error) {
 	q := fmt.Sprintf("SELECT DISTINCT project_id FROM %s ORDER BY project_id", p.table)
 	rows, err := p.pool.Query(ctx, q)
