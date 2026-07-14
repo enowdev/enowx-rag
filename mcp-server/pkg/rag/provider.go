@@ -114,6 +114,17 @@ type Reranker interface {
 	Rerank(ctx context.Context, query string, docs []string, topK int) ([]RerankHit, error)
 }
 
+// Exporter is an optional interface for providers that can export every stored
+// point of a project with its FULL content and metadata (unlike ListPoints,
+// which truncates content for previews). This is the read side of migration /
+// re-embedding: the returned Documents can be re-embedded by a destination
+// provider. ID is the original doc_id and Meta carries the full stored
+// metadata (source_file, content_hash, chunk_version, embed_model, etc.) so a
+// migration can preserve identity for incremental sync.
+type Exporter interface {
+	ExportPoints(ctx context.Context, projectID string) ([]Document, error)
+}
+
 // PointInfo is a stored point's ID together with the payload fields needed to
 // reconcile it against the current file set during incremental sync. Content
 // and ChunkIndex are populated by ListPoints when the UI needs to display

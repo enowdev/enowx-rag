@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/enowdev/enowx-rag/pkg/config"
@@ -17,6 +16,7 @@ import (
 	"github.com/enowdev/enowx-rag/pkg/httpapi"
 	"github.com/enowdev/enowx-rag/pkg/indexer"
 	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/pkg/ragbuild"
 	"github.com/enowdev/enowx-rag/web"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -79,34 +79,22 @@ func resolveConfig() (*RuntimeConfig, error) {
 }
 
 func buildProvider(ctx context.Context, cfg *RuntimeConfig) (rag.Provider, error) {
-	var embedder rag.EmbeddingClient
-	switch strings.ToLower(cfg.Embedder) {
-	case "tei":
-		embedder = rag.NewTEIEmbeddingClient(cfg.TEIBaseURL)
-	case "voyage":
-		if cfg.VoyageAPIKey == "" {
-			return nil, fmt.Errorf("RAG_VOYAGE_API_KEY is required for voyage embedder")
-		}
-		embedder = rag.NewVoyageEmbeddingClient(cfg.VoyageAPIKey, cfg.VoyageModel, cfg.VectorDim)
-	case "openai":
-		if cfg.OpenAIModel == "" {
-			return nil, fmt.Errorf("RAG_OPENAI_MODEL is required for the openai embedder")
-		}
-		embedder = rag.NewOpenAIEmbeddingClient(cfg.OpenAIAPIKey, cfg.OpenAIModel, cfg.OpenAIBaseURL, cfg.OpenAIDim)
-	default:
-		return nil, fmt.Errorf("unsupported embedder: %s", cfg.Embedder)
-	}
-
-	switch strings.ToLower(cfg.VectorStore) {
-	case "qdrant":
-		return rag.NewQdrantProvider(ctx, cfg.QdrantURL, cfg.QdrantAPIKey, embedder)
-	case "chroma":
-		return rag.NewChromaProvider(cfg.ChromaURL, embedder), nil
-	case "pgvector":
-		return rag.NewPGVectorProvider(ctx, cfg.PGVectorDSN, embedder, "project_memory")
-	default:
-		return nil, fmt.Errorf("unsupported vector store: %s", cfg.VectorStore)
-	}
+	return ragbuild.BuildProvider(ctx, ragbuild.Spec{
+		VectorStore:   cfg.VectorStore,
+		Embedder:      cfg.Embedder,
+		QdrantURL:     cfg.QdrantURL,
+		QdrantAPIKey:  cfg.QdrantAPIKey,
+		ChromaURL:     cfg.ChromaURL,
+		PGVectorDSN:   cfg.PGVectorDSN,
+		VoyageAPIKey:  cfg.VoyageAPIKey,
+		VoyageModel:   cfg.VoyageModel,
+		VoyageDim:     cfg.VectorDim,
+		OpenAIAPIKey:  cfg.OpenAIAPIKey,
+		OpenAIModel:   cfg.OpenAIModel,
+		OpenAIBaseURL: cfg.OpenAIBaseURL,
+		OpenAIDim:     cfg.OpenAIDim,
+		TEIURL:        cfg.TEIBaseURL,
+	})
 }
 
 // buildService wraps a provider, optional reranker, and indexer into a

@@ -305,6 +305,52 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 	return all, nil
 }
 
+// ExportPoints scrolls every point with full payload and returns Documents with
+// full content and all string metadata. Implements Exporter (for migration).
+func (p *QdrantProvider) ExportPoints(ctx context.Context, projectID string) ([]Document, error) {
+	name := p.collectionName(projectID)
+	var docs []Document
+	var scrollOffset any = nil
+	limit := 256
+	for {
+		body := map[string]any{"limit": limit, "with_payload": true, "with_vector": false}
+		if scrollOffset != nil {
+			body["offset"] = scrollOffset
+		}
+		var resp struct {
+			Result struct {
+				Points []struct {
+					ID      any            `json:"id"`
+					Payload map[string]any `json:"payload"`
+				} `json:"points"`
+				NextOffset any `json:"next_page_offset"`
+			} `json:"result"`
+		}
+		if err := p.do(ctx, http.MethodPost, "/collections/"+name+"/points/scroll", body, &resp); err != nil {
+			return nil, fmt.Errorf("qdrant export scroll: %w", err)
+		}
+		for _, pt := range resp.Result.Points {
+			content, _ := pt.Payload["content"].(string)
+			meta := make(map[string]string, len(pt.Payload))
+			for k, v := range pt.Payload {
+				if s, ok := v.(string); ok {
+					meta[k] = s
+				}
+			}
+			id := fmt.Sprintf("%v", pt.ID)
+			if v, ok := pt.Payload["doc_id"].(string); ok && v != "" {
+				id = v
+			}
+			docs = append(docs, Document{ID: id, Content: content, Meta: meta})
+		}
+		if resp.Result.NextOffset == nil {
+			break
+		}
+		scrollOffset = resp.Result.NextOffset
+	}
+	return docs, nil
+}
+
 // pointID maps an arbitrary document ID to a value Qdrant accepts as a point
 // ID (a UUID). IDs that are already valid UUIDs are returned unchanged;
 // everything else is hashed into a deterministic UUIDv5 so the same document

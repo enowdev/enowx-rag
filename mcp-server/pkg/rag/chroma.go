@@ -252,6 +252,39 @@ func (p *ChromaProvider) ListPoints(ctx context.Context, projectID string, metaF
 
 func (p *ChromaProvider) Close() error { return nil }
 
+// ExportPoints returns every point with full content and all string metadata.
+// Implements Exporter (for migration).
+func (p *ChromaProvider) ExportPoints(ctx context.Context, projectID string) ([]Document, error) {
+	body := map[string]any{"include": []string{"metadatas", "documents"}}
+	var resp chromaQueryResponse
+	if err := p.do(ctx, http.MethodPost, "/api/v1/collections/"+p.collectionName(projectID)+"/get", body, &resp); err != nil {
+		return nil, err
+	}
+	var docs []Document
+	for bi, batch := range resp.IDs {
+		for pi, id := range batch {
+			content := ""
+			if bi < len(resp.Documents) && pi < len(resp.Documents[bi]) {
+				content = resp.Documents[bi][pi]
+			}
+			meta := map[string]string{}
+			docID := id
+			if bi < len(resp.Metadatas) && pi < len(resp.Metadatas[bi]) {
+				for k, v := range resp.Metadatas[bi][pi] {
+					if s, ok := v.(string); ok {
+						meta[k] = s
+					}
+				}
+				if v := meta["doc_id"]; v != "" {
+					docID = v
+				}
+			}
+			docs = append(docs, Document{ID: docID, Content: content, Meta: meta})
+		}
+	}
+	return docs, nil
+}
+
 // CountPoints returns the number of embeddings in a project's collection via
 // Chroma's count endpoint, avoiding a full get. Implements core.ProjectCounter.
 func (p *ChromaProvider) CountPoints(ctx context.Context, projectID string) (int, error) {

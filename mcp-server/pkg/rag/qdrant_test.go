@@ -179,3 +179,48 @@ func TestQdrantListProjectIDs(t *testing.T) {
 		}
 	}
 }
+
+// TestQdrantExportPoints verifies export returns FULL content (not truncated to
+// 200 chars) and preserves doc_id + metadata.
+func TestQdrantExportPoints(t *testing.T) {
+	longContent := ""
+	for i := 0; i < 500; i++ {
+		longContent += "x"
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{"result": map[string]any{
+			"points": []map[string]any{
+				{"id": "uuid-1", "payload": map[string]any{"content": longContent, "doc_id": "file.go#chunk0", "source_file": "file.go", "content_hash": "h1"}},
+			},
+			"next_page_offset": nil,
+		}}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	p, err := NewQdrantProvider(context.Background(), srv.URL, "", &mockQueryEmbedder{})
+	if err != nil {
+		t.Fatalf("NewQdrantProvider: %v", err)
+	}
+	docs, err := p.ExportPoints(context.Background(), "proj")
+	if err != nil {
+		t.Fatalf("ExportPoints: %v", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("expected 1 doc, got %d", len(docs))
+	}
+	if len(docs[0].Content) != 500 {
+		t.Errorf("content truncated: got %d chars, want 500 (export must not truncate)", len(docs[0].Content))
+	}
+	if docs[0].ID != "file.go#chunk0" {
+		t.Errorf("ID = %q, want doc_id preserved", docs[0].ID)
+	}
+	if docs[0].Meta["content_hash"] != "h1" {
+		t.Error("metadata not preserved")
+	}
+}

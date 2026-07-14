@@ -553,6 +553,17 @@ func (s *Service) ListPoints(ctx context.Context, projectID string, metaFilter m
 	return s.provider.ListPoints(ctx, projectID, metaFilter)
 }
 
+// ExportProject returns every point of a project with full content and metadata,
+// for migration / re-embedding. Requires the provider to implement rag.Exporter
+// (all built-in providers do); returns an error otherwise.
+func (s *Service) ExportProject(ctx context.Context, projectID string) ([]rag.Document, error) {
+	exporter, ok := s.provider.(rag.Exporter)
+	if !ok {
+		return nil, fmt.Errorf("this vector store does not support export")
+	}
+	return exporter.ExportPoints(ctx, projectID)
+}
+
 // ProjectExists checks whether a project with the given ID has any indexed
 // data. It first tries the ProjectLister interface (if the provider supports
 // it) for an O(1) set lookup; otherwise it falls back to ListPoints which

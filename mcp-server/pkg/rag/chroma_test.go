@@ -165,3 +165,37 @@ func TestChromaListProjectIDs(t *testing.T) {
 		}
 	}
 }
+
+// TestChromaExportPoints verifies export returns full content + metadata.
+func TestChromaExportPoints(t *testing.T) {
+	long := ""
+	for i := 0; i < 500; i++ {
+		long += "y"
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/collections/project_proj/get" {
+			w.Header().Set("Content-Type", "application/json")
+			resp := map[string]any{
+				"ids":       [][]string{{"id1"}},
+				"documents": [][]string{{long}},
+				"metadatas": [][]map[string]any{{{"doc_id": "file.go#0", "source_file": "file.go"}}},
+			}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	p := NewChromaProvider(srv.URL, &mockQueryEmbedder{})
+	docs, err := p.ExportPoints(context.Background(), "proj")
+	if err != nil {
+		t.Fatalf("ExportPoints: %v", err)
+	}
+	if len(docs) != 1 || len(docs[0].Content) != 500 {
+		t.Fatalf("expected 1 doc with 500 chars, got %d docs", len(docs))
+	}
+	if docs[0].ID != "file.go#0" {
+		t.Errorf("ID = %q, want doc_id", docs[0].ID)
+	}
+}

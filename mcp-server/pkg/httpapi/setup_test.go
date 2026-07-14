@@ -771,3 +771,31 @@ func writeTestConfig(home string) error {
 	yaml := "vector_store: qdrant\nembedder: voyage\nqdrant_url: http://localhost:6333\nvoyage:\n  api_key: k\n  model: voyage-4\n"
 	return os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0o600)
 }
+
+// TestMigrateEndpointRemoteRejected verifies /api/migrate is loopback-gated.
+func TestMigrateEndpointRemoteRejected(t *testing.T) {
+	t.Setenv("RAG_ADMIN_TOKEN", "")
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+	body := `{"source_project":"a","dest_project":"b","vector_store":"qdrant","embedder":"voyage"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/migrate", strings.NewReader(body))
+	req.RemoteAddr = "203.0.113.11:5555"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("remote migrate = %d, want 403", w.Code)
+	}
+}
+
+// TestMigrateEndpointValidates requires source and dest projects.
+func TestMigrateEndpointValidates(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/migrate", strings.NewReader(`{"source_project":"a"}`))
+	req.RemoteAddr = "127.0.0.1:1"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("missing dest = %d, want 400", w.Code)
+	}
+}

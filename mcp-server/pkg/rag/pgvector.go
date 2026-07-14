@@ -383,6 +383,36 @@ func (p *PGVectorProvider) ListPoints(ctx context.Context, projectID string, met
 	return points, rows.Err()
 }
 
+// ExportPoints returns every point in the project with full content and full
+// metadata. Implements Exporter (used by migration to re-embed elsewhere).
+func (p *PGVectorProvider) ExportPoints(ctx context.Context, projectID string) ([]Document, error) {
+	q := fmt.Sprintf("SELECT id, content, metadata FROM %s WHERE project_id = $1 ORDER BY metadata->>'source_file', metadata->>'chunk_index'", p.table)
+	rows, err := p.pool.Query(ctx, q, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var docs []Document
+	for rows.Next() {
+		var id, content string
+		var meta map[string]string
+		if err := rows.Scan(&id, &content, &meta); err != nil {
+			return nil, err
+		}
+		if meta == nil {
+			meta = map[string]string{}
+		}
+		// Prefer the original doc_id as the Document ID so identity is preserved.
+		docID := id
+		if v := meta["doc_id"]; v != "" {
+			docID = v
+		}
+		docs = append(docs, Document{ID: docID, Content: content, Meta: meta})
+	}
+	return docs, rows.Err()
+}
+
 func (p *PGVectorProvider) Close() error {
 	p.pool.Close()
 	return nil
