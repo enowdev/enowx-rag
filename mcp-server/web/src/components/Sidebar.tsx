@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { LayoutGrid, Search, List, Settings } from 'lucide-react'
+import { LayoutGrid, Search, List, Settings, ArrowRightLeft } from 'lucide-react'
 import type { Page, ProjectInfo } from '../App'
 import { api } from '../lib/api'
 import { useEvents } from '../lib/sse'
@@ -17,6 +17,7 @@ const navItems: { label: string; page: Page; icon: typeof LayoutGrid }[] = [
   { label: 'Overview', page: 'overview', icon: LayoutGrid },
   { label: 'Playground', page: 'playground', icon: Search },
   { label: 'Chunks', page: 'chunks', icon: List },
+  { label: 'Migration', page: 'migration', icon: ArrowRightLeft },
   { label: 'Setup', page: 'setup', icon: Settings },
 ]
 
@@ -58,7 +59,7 @@ export function Sidebar({ page, onNavigate, projects, activeProject, onSelectPro
   useEffect(() => {
     if (events.length === 0) return
     const latest = events[0]
-    if (latest.type === 'index_completed' || latest.type === 'project_deleted' || latest.type === 'project_created' || latest.type === 'points_deleted' || latest.type === 'documents_indexed') {
+    if (latest.type === 'index_completed' || latest.type === 'project_deleted' || latest.type === 'project_created' || latest.type === 'points_deleted' || latest.type === 'documents_indexed' || latest.type === 'migration_completed') {
       fetchProjects()
     }
   }, [events, fetchProjects])

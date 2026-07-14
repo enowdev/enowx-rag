@@ -56,6 +56,10 @@ export function useEvents(maxEvents: number = 50): UseEventsResult {
       'project_deleted',
       'points_deleted',
       'documents_indexed',
+      'migration_started',
+      'migration_progress',
+      'migration_completed',
+      'migration_failed',
       'message',
     ]
     eventTypes.forEach((t) => es.addEventListener(t, handler))

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { Topbar } from './components/Topbar'
 import { Overview } from './pages/Overview'
+import { Migration } from './pages/Migration'
 import { Playground } from './pages/Playground'
 import { Chunks } from './pages/Chunks'
 import { Setup } from './pages/Setup'
@@ -9,7 +10,7 @@ import { Wizard } from './pages/onboarding/Wizard'
 import { useTheme } from './lib/useTheme'
 import { api } from './lib/api'
 
-export type Page = 'overview' | 'playground' | 'chunks' | 'setup'
+export type Page = 'overview' | 'playground' | 'chunks' | 'migration' | 'setup'
 
 export interface ProjectInfo {
   projectID: string
@@ -105,6 +106,7 @@ function App() {
           {page === 'overview' && <Overview activeProject={activeProject} onNavigate={handleNavigate} onNavigateWithQuery={handleNavigateWithQuery} sharedQuery={sharedQuery} onSharedQueryChange={setSharedQuery} onProjectsUpdated={setProjects} />}
           {page === 'playground' && <Playground activeProject={activeProject} sharedQuery={sharedQuery} onSharedQueryChange={setSharedQuery} />}
           {page === 'chunks' && <Chunks activeProject={activeProject} />}
+          {page === 'migration' && <Migration activeProject={activeProject} projects={projects} />}
           {page === 'setup' && <Setup />}
         </div>
       </div>

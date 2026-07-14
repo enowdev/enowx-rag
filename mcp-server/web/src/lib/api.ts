@@ -137,6 +137,32 @@ export interface SkillGuideResponse {
   commands: string[]
 }
 
+export interface MigrateRequest {
+  source_project: string
+  dest_project: string
+  vector_store: string
+  embedder: string
+  qdrant_url?: string
+  qdrant_api_key?: string
+  chroma_url?: string
+  pgvector_dsn?: string
+  pgvector_table?: string
+  voyage_api_key?: string
+  voyage_model?: string
+  voyage_dim?: number
+  openai_api_key?: string
+  openai_model?: string
+  openai_base_url?: string
+  openai_dim?: number
+  tei_url?: string
+}
+
+export interface MigrateResponse {
+  status: string
+  source: string
+  dest: string
+}
+
 const API_BASE = '/api'
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
@@ -226,4 +252,11 @@ export const api = {
     fetchJSON<McpSnippetResponse>(`${API_BASE}/setup/mcp-snippet?client_id=${encodeURIComponent(clientId)}`),
 
   skillGuide: () => fetchJSON<SkillGuideResponse>(`${API_BASE}/setup/skill-guide`),
+
+  migrate: (req: MigrateRequest) =>
+    fetchJSON<MigrateResponse>(`${API_BASE}/migrate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    }),
 }
