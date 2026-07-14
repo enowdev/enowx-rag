@@ -84,30 +84,11 @@ func TestMigratorRun(t *testing.T) {
 	}
 }
 
-// TestMigratorSourceNotExporter errors clearly when source can't export.
-func TestMigratorSourceNotExporter(t *testing.T) {
-	m := &Migrator{Src: &nonExporter{}, Dst: &fakeProvider{}}
+// TestMigratorNoSource errors clearly when no source is configured.
+func TestMigratorNoSource(t *testing.T) {
+	m := &Migrator{Src: nil, Dst: &fakeProvider{}}
 	_, err := m.Run(context.Background(), "a", "b", nil)
 	if err == nil {
-		t.Fatal("expected error when source is not an Exporter")
+		t.Fatal("expected error when source is nil")
 	}
 }
-
-// nonExporter is a rag.Provider that does NOT implement rag.Exporter.
-type nonExporter struct{}
-
-func (nonExporter) CreateCollection(ctx context.Context, p string) error { return nil }
-func (nonExporter) DeleteCollection(ctx context.Context, p string) error { return nil }
-func (nonExporter) Index(ctx context.Context, p string, d []rag.Document) error { return nil }
-func (nonExporter) SemanticSearch(ctx context.Context, p, q string, l int) ([]rag.Result, error) {
-	return nil, nil
-}
-func (nonExporter) Embed(ctx context.Context, t string) ([]float32, error) { return nil, nil }
-func (nonExporter) DeletePoints(ctx context.Context, p string, ids []string) error { return nil }
-func (nonExporter) ListPointIDs(ctx context.Context, p string, mf map[string]string) ([]string, error) {
-	return nil, nil
-}
-func (nonExporter) ListPoints(ctx context.Context, p string, mf map[string]string) ([]rag.PointInfo, error) {
-	return nil, nil
-}
-func (nonExporter) Close() error { return nil }

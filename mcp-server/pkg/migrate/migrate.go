@@ -19,9 +19,11 @@ type Progress struct {
 	Total int
 }
 
-// Migrator re-embeds a project from Src into Dst.
+// Migrator re-embeds a project from Src into Dst. Src is any rag.Exporter — an
+// enowx-rag provider OR an external cloud connector (see pkg/migrate/cloud) —
+// so the same write/re-embed path serves in-store migration and cloud import.
 type Migrator struct {
-	Src rag.Provider
+	Src rag.Exporter
 	Dst rag.Provider
 	// BatchSize controls how many documents are written per Index call.
 	BatchSize int
@@ -32,11 +34,10 @@ type Migrator struct {
 // is called after each batch (throttled to batch granularity, so the event bus
 // is not flooded per-document). It returns the number of documents migrated.
 func (m *Migrator) Run(ctx context.Context, srcProject, dstProject string, onProgress func(Progress)) (int, error) {
-	exporter, ok := m.Src.(rag.Exporter)
-	if !ok {
-		return 0, fmt.Errorf("source vector store does not support export")
+	if m.Src == nil {
+		return 0, fmt.Errorf("no migration source configured")
 	}
-	docs, err := exporter.ExportPoints(ctx, srcProject)
+	docs, err := m.Src.ExportPoints(ctx, srcProject)
 	if err != nil {
 		return 0, fmt.Errorf("export source: %w", err)
 	}

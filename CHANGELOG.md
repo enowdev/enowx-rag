@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Migration** page + engine: re-embed a project's stored text into a new
+  destination to change embedding model/dimension or move between vector stores
+  (Qdrant/pgvector/Chroma). Raw vectors aren't copied (they're model-specific);
+  the text — stored alongside every chunk — is re-embedded by the destination.
+  `POST /api/migrate` runs asynchronously with live SSE progress; the UI shows a
+  progress bar and offers to delete the source after success.
+- **Cloud import**: pull from an external vector DB and re-embed. Qdrant Cloud is
+  verified (reuses the tested Qdrant provider); Pinecone, Weaviate, and Chroma
+  Cloud connectors are **experimental** (built from vendor docs, mock-tested
+  only — not verified against a live account) and labelled as such in the UI.
 - OpenAI-compatible embedder (`RAG_EMBEDDER=openai`): works with any
   `/v1/embeddings` API — OpenAI, Together, Jina, Mistral, a local Ollama,
   LiteLLM, etc. — via `RAG_OPENAI_BASE_URL` / `RAG_OPENAI_MODEL` /

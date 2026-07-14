@@ -13,8 +13,16 @@ type Store = 'qdrant' | 'pgvector' | 'chroma'
 type Embedder = 'voyage' | 'openai' | 'tei'
 
 export function Migration({ activeProject, projects }: MigrationProps) {
+  const [sourceMode, setSourceMode] = useState<'project' | 'cloud'>('project')
   const [source, setSource] = useState(activeProject || '')
   const [dest, setDest] = useState('')
+
+  // External cloud source fields.
+  const [cloudProvider, setCloudProvider] = useState<'qdrant' | 'pinecone' | 'weaviate' | 'chroma'>('qdrant')
+  const [cloudURL, setCloudURL] = useState('')
+  const [cloudKey, setCloudKey] = useState('')
+  const [cloudIndex, setCloudIndex] = useState('')
+  const [cloudTextField, setCloudTextField] = useState('content')
   const [store, setStore] = useState<Store>('qdrant')
   const [embedder, setEmbedder] = useState<Embedder>('voyage')
   const [revealKey, setRevealKey] = useState(false)
@@ -72,14 +80,23 @@ export function Migration({ activeProject, projects }: MigrationProps) {
   }, [events])
 
   const runMigration = async () => {
-    if (!source || !dest) return
+    if (!dest) return
+    if (sourceMode === 'project' && !source) return
+    if (sourceMode === 'cloud' && (!cloudURL || !cloudIndex)) return
     setError('')
     setFinished(null)
     setDeleteMsg('')
     setRunning(true)
     const req: MigrateRequest = {
-      source_project: source,
+      source_project: sourceMode === 'cloud' ? cloudIndex : source,
       dest_project: dest,
+      cloud_source: sourceMode === 'cloud' ? {
+        provider: cloudProvider,
+        url: cloudURL,
+        api_key: cloudKey || undefined,
+        index: cloudIndex,
+        text_field: cloudTextField || undefined,
+      } : undefined,
       vector_store: store,
       embedder,
       qdrant_url: store === 'qdrant' ? qdrantURL : undefined,
@@ -135,15 +152,58 @@ export function Migration({ activeProject, projects }: MigrationProps) {
               model-specific); the text is re-embedded by the destination.
             </p>
 
-            <div className="field">
-              <label>Source project</label>
-              <select className="select-box mono" value={source} onChange={(e) => setSource(e.target.value)}>
-                <option value="">— select —</option>
-                {projects.map((p) => (
-                  <option key={p.projectID} value={p.projectID}>{p.projectID} ({p.chunkCount})</option>
-                ))}
-              </select>
+            <div className="toolbar" style={{ marginBottom: 12 }}>
+              <span className={`toggle ${sourceMode === 'project' ? 'on' : ''}`} onClick={() => setSourceMode('project')}>
+                <span className="switch" /> Existing project
+              </span>
+              <span className={`toggle ${sourceMode === 'cloud' ? 'on' : ''}`} onClick={() => setSourceMode('cloud')}>
+                <span className="switch" /> Import from cloud
+              </span>
             </div>
+
+            {sourceMode === 'project' ? (
+              <div className="field">
+                <label>Source project</label>
+                <select className="select-box mono" value={source} onChange={(e) => setSource(e.target.value)}>
+                  <option value="">— select —</option>
+                  {projects.map((p) => (
+                    <option key={p.projectID} value={p.projectID}>{p.projectID} ({p.chunkCount})</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <>
+                <div className="field">
+                  <label>Cloud provider</label>
+                  <select className="select-box mono" value={cloudProvider} onChange={(e) => setCloudProvider(e.target.value as typeof cloudProvider)}>
+                    <option value="qdrant">Qdrant Cloud</option>
+                    <option value="pinecone">Pinecone (experimental)</option>
+                    <option value="weaviate">Weaviate (experimental)</option>
+                    <option value="chroma">Chroma Cloud (experimental)</option>
+                  </select>
+                </div>
+                {cloudProvider !== 'qdrant' && (
+                  <div className="warn-box">
+                    <XCircle size={16} className="warn-icon" />
+                    <div className="warn-text">
+                      <b>Experimental connector.</b> Built from the vendor's API docs and tested only
+                      against mocks — not verified against a live {cloudProvider} account. It may need
+                      adjustment. Qdrant Cloud is the verified path.
+                    </div>
+                  </div>
+                )}
+                <div className="field"><label>Endpoint URL</label>
+                  <input className="input mono" value={cloudURL} onChange={(e) => setCloudURL(e.target.value)} placeholder="https://…" /></div>
+                <div className="field"><label>API key</label>
+                  <input className="input mono" type="password" value={cloudKey} onChange={(e) => setCloudKey(e.target.value)} /></div>
+                <div className="field-row">
+                  <div className="field"><label>Index / collection / class</label>
+                    <input className="input mono" value={cloudIndex} onChange={(e) => setCloudIndex(e.target.value)} /></div>
+                  <div className="field"><label>Text field</label>
+                    <input className="input mono" value={cloudTextField} onChange={(e) => setCloudTextField(e.target.value)} /></div>
+                </div>
+              </>
+            )}
 
             <div className="field">
               <label>Destination project name</label>
@@ -229,7 +289,7 @@ export function Migration({ activeProject, projects }: MigrationProps) {
               <div className="field"><label>TEI URL</label><input className="input mono" value={teiURL} onChange={(e) => setTeiURL(e.target.value)} /></div>
             )}
 
-            <button className="btn primary" onClick={runMigration} disabled={running || !source || !dest} style={{ marginTop: 8 }}>
+            <button className="btn primary" onClick={runMigration} disabled={running || !dest || (sourceMode === 'project' ? !source : (!cloudURL || !cloudIndex))} style={{ marginTop: 8 }}>
               <Play size={14} /> {running ? 'Migrating…' : 'Start migration'}
             </button>
             {error && <div className="error-state" style={{ marginTop: 12 }}>{error}</div>}
@@ -263,9 +323,11 @@ export function Migration({ activeProject, projects }: MigrationProps) {
                       <CheckCircle2 size={16} />
                       <span>Migration complete. Verify "{dest}" in the Playground, then optionally remove the source.</span>
                     </div>
-                    <button className="btn" onClick={deleteSource} style={{ marginTop: 12 }}>
-                      <Trash2 size={14} /> Delete source project "{source}"
-                    </button>
+                    {sourceMode === 'project' && (
+                      <button className="btn" onClick={deleteSource} style={{ marginTop: 12 }}>
+                        <Trash2 size={14} /> Delete source project "{source}"
+                      </button>
+                    )}
                     {deleteMsg && <div className="reindex-msg" style={{ marginTop: 10 }}>{deleteMsg}</div>}
                   </>
                 )}

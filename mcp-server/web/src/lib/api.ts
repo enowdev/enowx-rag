@@ -137,9 +137,18 @@ export interface SkillGuideResponse {
   commands: string[]
 }
 
+export interface CloudSource {
+  provider: string // qdrant | pinecone | weaviate | chroma
+  url: string
+  api_key?: string
+  index: string
+  text_field?: string
+}
+
 export interface MigrateRequest {
   source_project: string
   dest_project: string
+  cloud_source?: CloudSource
   vector_store: string
   embedder: string
   qdrant_url?: string

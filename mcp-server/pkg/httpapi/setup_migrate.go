@@ -8,6 +8,8 @@ import (
 
 	"github.com/enowdev/enowx-rag/pkg/core"
 	"github.com/enowdev/enowx-rag/pkg/migrate"
+	"github.com/enowdev/enowx-rag/pkg/migrate/cloud"
+	"github.com/enowdev/enowx-rag/pkg/rag"
 	"github.com/enowdev/enowx-rag/pkg/ragbuild"
 )
 
@@ -17,6 +19,17 @@ import (
 type migrateRequest struct {
 	SourceProject string `json:"source_project"`
 	DestProject   string `json:"dest_project"`
+
+	// Optional external cloud source. When set, data is read from this vendor
+	// instead of the running provider. Only Qdrant is verified; others are
+	// experimental (see pkg/migrate/cloud).
+	CloudSource *struct {
+		Provider  string `json:"provider"` // qdrant | pinecone | weaviate | chroma
+		URL       string `json:"url"`
+		APIKey    string `json:"api_key"`
+		Index     string `json:"index"`
+		TextField string `json:"text_field"`
+	} `json:"cloud_source"`
 
 	VectorStore   string `json:"vector_store"`
 	Embedder      string `json:"embedder"`
@@ -48,7 +61,7 @@ func (h *Handlers) Migrate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "source_project and dest_project are required")
 		return
 	}
-	if req.SourceProject == req.DestProject && sameStore(req) {
+	if req.CloudSource == nil && req.SourceProject == req.DestProject && sameStore(req) {
 		writeErr(w, http.StatusBadRequest, "destination must differ from source (project name or store)")
 		return
 	}
@@ -77,8 +90,33 @@ func (h *Handlers) Migrate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Source: an external cloud connector when cloud_source is set, otherwise
+	// the running provider (which must support export).
+	var src rag.Exporter
+	if req.CloudSource != nil {
+		cs, cerr := cloud.NewExporter(r.Context(), cloud.Source{
+			Provider:  req.CloudSource.Provider,
+			URL:       req.CloudSource.URL,
+			APIKey:    req.CloudSource.APIKey,
+			Index:     req.CloudSource.Index,
+			TextField: req.CloudSource.TextField,
+		})
+		if cerr != nil {
+			writeErr(w, http.StatusBadRequest, "cloud source: "+cerr.Error())
+			return
+		}
+		src = cs
+	} else {
+		p, ok := h.svc.Provider().(rag.Exporter)
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "the current vector store does not support export")
+			return
+		}
+		src = p
+	}
+
 	events := h.svc.Events()
-	m := &migrate.Migrator{Src: h.svc.Provider(), Dst: dst, BatchSize: 64}
+	m := &migrate.Migrator{Src: src, Dst: dst, BatchSize: 64}
 
 	events.Publish(core.Event{
 		Type:      "migration_started",

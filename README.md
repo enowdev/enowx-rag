@@ -646,6 +646,27 @@ enowx-rag/
 > **pgvector** for a supported setup. Contributions to port Chroma to `/api/v2`
 > are welcome.
 
+## Migration
+
+The dashboard's **Migration** page (and `POST /api/migrate`) re-embeds a
+project's stored text into a new destination. Because embedding vectors are
+model-specific and not portable, migration re-embeds from text (which enowx-rag
+stores alongside every chunk) rather than copying raw vectors. Use it to:
+
+- **Change embedding model or dimension** — pick a new embedder/model/dim; the
+  destination collection is re-embedded from the source text.
+  (For pgvector, a new dimension requires a **new table name** — all projects in
+  one pgvector table share a fixed vector dimension.)
+- **Move between vector stores** — e.g. Qdrant → pgvector.
+- **Import from an external cloud vector DB** — **Qdrant Cloud** is verified;
+  **Pinecone**, **Weaviate**, and **Chroma Cloud** connectors are *experimental*
+  (built from vendor docs, mock-tested only — not verified against a live
+  account) and are labelled as such in the UI.
+
+Migrations run asynchronously with live progress over SSE. The source project is
+never removed automatically; after a successful migration the UI offers an
+explicit "Delete source" action.
+
 ## Embedding options
 
 ### Option A: Voyage AI (recommended, hosted)
