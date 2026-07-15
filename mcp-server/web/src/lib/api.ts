@@ -274,6 +274,22 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
+  configMasked: () => fetchJSON<Record<string, unknown>>(`${API_BASE}/setup/config`),
+
+  configReveal: () => fetchJSON<Record<string, string>>(`${API_BASE}/setup/config/reveal`),
+
+  configUpdate: (patch: Record<string, string>) =>
+    fetchJSON<{ status: string }>(`${API_BASE}/setup/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }),
+
+  genToken: () =>
+    fetchJSON<{ token: string; env_override: boolean; note: string }>(`${API_BASE}/setup/gen-token`, {
+      method: 'POST',
+    }),
+
   docsList: () => fetchJSON<{ id: string; title: string }[]>(`${API_BASE}/docs`),
 
   docsSection: async (id: string): Promise<string> => {

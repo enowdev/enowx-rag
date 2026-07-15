@@ -984,3 +984,73 @@ func TestMCPMount_OpenWhenNoToken(t *testing.T) {
 		t.Fatalf("/mcp without token set = %d, want 200 (open)", w.Code)
 	}
 }
+
+// TestSetupConfig_Masked verifies the config endpoint masks secrets.
+func TestSetupConfig_Masked(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	if err := writeTestConfig(tmp); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/config", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("config = %d, want 200", w.Code)
+	}
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	vk, _ := resp["voyage_api_key"].(string)
+	if vk == "" || vk == "k" || !strings.Contains(vk, "•") {
+		t.Errorf("voyage_api_key should be masked, got %q", vk)
+	}
+}
+
+// TestGenToken_SavesAndGates verifies gen-token writes a token that then gates
+// requests (per-request effective token).
+func TestGenToken_SavesAndGates(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("RAG_ADMIN_TOKEN", "") // ensure config value is the effective one
+	if err := writeTestConfig(tmp); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	// Generate a token (loopback allowed).
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/gen-token", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("gen-token = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var gen map[string]any
+	json.Unmarshal(w.Body.Bytes(), &gen)
+	token, _ := gen["token"].(string)
+	if len(token) < 32 {
+		t.Fatalf("token too short: %q", token)
+	}
+
+	// Now a remote request to a gated endpoint without the token → 401
+	// (AdminTokenMiddleware reads the freshly saved config token per-request).
+	req = httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+	req.RemoteAddr = "203.0.113.5:9"
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("gated /api/stats without token = %d, want 401", w.Code)
+	}
+
+	// With the generated token → allowed.
+	req = httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("gated /api/stats with token = %d, want 200", w.Code)
+	}
+}

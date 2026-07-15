@@ -4,25 +4,24 @@ import (
 	"crypto/subtle"
 	"net"
 	"net/http"
-	"os"
+
+	"github.com/enowdev/enowx-rag/pkg/config"
 )
 
-// AdminTokenMiddleware returns an HTTP middleware that protects /api/*
-// endpoints with a shared admin token. When RAG_ADMIN_TOKEN is set, every
-// request to a protected route must include an Authorization header whose
-// value matches "Bearer <token>". When the env var is unset, the middleware
-// is a no-op (all requests pass through without auth).
+// AdminTokenMiddleware returns an HTTP middleware that protects /api/* and /mcp
+// with a shared admin token. The effective token is RAG_ADMIN_TOKEN if set,
+// otherwise the value saved in config.yaml (config.EffectiveAdminToken). It is
+// read per-request so a token generated at runtime takes effect immediately.
+// When there is no token, the middleware is a no-op (no auth).
 //
-// The token comparison uses subtle.ConstantTimeCompare to prevent timing
-// attacks.
+// The token comparison uses subtle.ConstantTimeCompare to prevent timing attacks.
 func AdminTokenMiddleware(next http.Handler) http.Handler {
-	token := os.Getenv("RAG_ADMIN_TOKEN")
-	if token == "" {
-		// No token configured: no auth required.
-		return next
-	}
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := config.EffectiveAdminToken()
+		if token == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		provided := extractBearerToken(r)
 		if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
 			w.Header().Set("Content-Type", "application/json")
@@ -47,7 +46,7 @@ func LocalOrAdminMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		token := os.Getenv("RAG_ADMIN_TOKEN")
+		token := config.EffectiveAdminToken()
 		provided := extractBearerToken(r)
 		if token != "" && provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1 {
 			next.ServeHTTP(w, r)

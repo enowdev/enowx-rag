@@ -46,6 +46,22 @@ type Config struct {
 	ChromaURL     string       `yaml:"chroma_url"`
 	TEIURL        string       `yaml:"tei_url"`
 	RerankerModel string       `yaml:"reranker_model"`
+	// AdminToken, when set, gates /api and /mcp with a bearer token. The env var
+	// RAG_ADMIN_TOKEN takes precedence over this file value (see EffectiveAdminToken).
+	AdminToken string `yaml:"admin_token,omitempty"`
+}
+
+// EffectiveAdminToken returns the admin token in effect: the RAG_ADMIN_TOKEN env
+// var if set, otherwise the value saved in the config file. Empty means no auth.
+func EffectiveAdminToken() string {
+	if v := os.Getenv("RAG_ADMIN_TOKEN"); v != "" {
+		return v
+	}
+	cfg, err := Load()
+	if err != nil {
+		return ""
+	}
+	return cfg.AdminToken
 }
 
 // Default returns a Config populated with built-in default values. These are

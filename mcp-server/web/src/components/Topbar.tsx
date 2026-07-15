@@ -14,6 +14,7 @@ const pageLabels: Record<Page, string> = {
   chunks: 'Chunks',
   migration: 'Migration',
   docs: 'Docs',
+  settings: 'Settings',
   setup: 'Setup',
 }
 

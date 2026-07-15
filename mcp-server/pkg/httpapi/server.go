@@ -58,6 +58,11 @@ func NewRouter(svc *core.Service, ui fs.FS, mcpHandler http.Handler) http.Handle
 			r.Post("/setup/install-mcp", h.SetupInstallMCP)
 			// write-agents-md writes AGENTS.md into a project dir — gate it.
 			r.Post("/setup/write-agents-md", h.SetupWriteAgentsMD)
+			// config reveal returns FULL secrets; update/gen-token write
+			// config.yaml (with secrets) — all gated.
+			r.Get("/setup/config/reveal", h.SetupConfigReveal)
+			r.Post("/setup/config", h.SetupConfigUpdate)
+			r.Post("/setup/gen-token", h.SetupGenToken)
 			// migrate writes data into a destination vector store (and may use
 			// user-supplied credentials) — gate it.
 			r.Post("/migrate", h.Migrate)
@@ -68,6 +73,7 @@ func NewRouter(svc *core.Service, ui fs.FS, mcpHandler http.Handler) http.Handle
 		r.Get("/setup/mcp-snippet", h.SetupMCPSnippet)
 		r.Get("/setup/skill-guide", h.SetupSkillGuide)
 		r.Get("/setup/probe", h.SetupProbe)
+		r.Get("/setup/config", h.SetupConfig) // masked config (no full secrets)
 		r.Get("/docs", h.DocsList)
 		r.Get("/docs/setup", h.SetupDocs) // alias for the agent-setup section
 		r.Get("/docs/{section}", h.DocsSection)

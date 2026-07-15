@@ -211,6 +211,10 @@ restricted to localhost or a valid `+"`RAG_ADMIN_TOKEN`"+` bearer token.
 - `+"`GET /api/setup/skill-guide`"+` — skill install instructions
 - `+"`GET /api/setup/probe?client=&dir=`"+` — what's already installed (for idempotent setup)
 - `+"`POST /api/setup/write-agents-md`"+` — merge the enowx-rag block into AGENTS.md
+- `+"`GET /api/setup/config`"+` — current config, secrets masked
+- `+"`GET /api/setup/config/reveal`"+` — full secrets (localhost or admin token)
+- `+"`POST /api/setup/config`"+` — update keys/settings
+- `+"`POST /api/setup/gen-token`"+` — generate + save an admin token
 
 ## Migration
 - `+"`POST /api/migrate`"+` — re-embed/move a project to a new destination (async, SSE)

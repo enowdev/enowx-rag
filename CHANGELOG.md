@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Settings page** to manage API keys and the admin token from the dashboard:
+  view keys masked (`GET /api/setup/config`), reveal full keys
+  (`/config/reveal`, localhost or admin token), update a key
+  (`POST /api/setup/config`, merged into config.yaml 0600), and generate an
+  admin token (`POST /api/setup/gen-token`, shown once, saved to config). The
+  admin token now takes effect from either `RAG_ADMIN_TOKEN` (precedence) or the
+  saved config, read per-request so a generated token works without a restart.
 - **More MCP tools** (6 → 11): `rag_list_projects` (discover projects + chunk
   counts), `rag_project_exists`, `rag_list_points` (inspect indexed chunks),
   `rag_delete_points` (remove stale chunks without a full re-index), and
