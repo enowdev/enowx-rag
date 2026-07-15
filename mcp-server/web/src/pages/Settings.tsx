@@ -72,6 +72,8 @@ export function Settings() {
 
   const m = (k: string) => (masked?.[k] as string) || '—'
   const rev = (k: string) => revealed?.[k]
+  const embedder = (masked?.embedder as string) || ''
+  const vectorStore = (masked?.vector_store as string) || ''
 
   return (
     <>
@@ -92,12 +94,26 @@ export function Settings() {
           <div className="panel-body">
             {error && <div className="error-state" style={{ marginBottom: 12 }}>{error}</div>}
 
-            <KeyRow label="Voyage API key" masked={m('voyage_api_key')} revealed={rev('voyage_api_key')}
-              value={voyageKey} onChange={setVoyageKey} placeholder="new Voyage key…" />
-            <KeyRow label="OpenAI API key" masked={m('openai_api_key')} revealed={rev('openai_api_key')}
-              value={openaiKey} onChange={setOpenaiKey} placeholder="new OpenAI key…" />
-            <KeyRow label="Qdrant API key" masked={m('qdrant_api_key')} revealed={rev('qdrant_api_key')}
-              value={qdrantKey} onChange={setQdrantKey} placeholder="new Qdrant key…" />
+            {embedder === 'voyage' && (
+              <KeyRow label="Voyage API key" masked={m('voyage_api_key')} revealed={rev('voyage_api_key')}
+                value={voyageKey} onChange={setVoyageKey} placeholder="new Voyage key…" />
+            )}
+            {embedder === 'openai' && (
+              <KeyRow label="OpenAI-compatible API key" masked={m('openai_api_key')} revealed={rev('openai_api_key')}
+                value={openaiKey} onChange={setOpenaiKey} placeholder="new key (empty for local)…" />
+            )}
+            {vectorStore === 'qdrant' && (
+              <KeyRow label="Qdrant API key" masked={m('qdrant_api_key')} revealed={rev('qdrant_api_key')}
+                value={qdrantKey} onChange={setQdrantKey} placeholder="new Qdrant key (for Qdrant Cloud)…" />
+            )}
+            {embedder === 'tei' && (
+              <div className="field-hint">TEI is self-hosted and needs no API key — nothing to manage here.</div>
+            )}
+
+            <div className="field-hint" style={{ marginBottom: 12 }}>
+              Showing keys for your active setup: embedder <b>{embedder || '—'}</b>, vector store <b>{vectorStore || '—'}</b>.
+              Change these in the <b>Setup</b> wizard.
+            </div>
 
             <button className="btn primary" onClick={save} style={{ marginTop: 6 }}>
               <Save size={14} /> Save changes
