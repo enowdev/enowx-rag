@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MCP over HTTP (remote daemon)**: `enowx-rag --serve` now also exposes the MCP
+  server at `/mcp` (Streamable HTTP transport, stateless), so agents can use
+  enowx-rag as a centralized remote daemon — e.g. on a VPS — instead of a local
+  stdio process. It's gated by the same `RAG_ADMIN_TOKEN` bearer as `/api`.
+  Connect a client with `{ "url": ".../mcp", "headers": { "Authorization":
+  "Bearer <token>" } }`. Local stdio mode is unchanged.
 - **Agent setup**: point an AI agent at `GET /api/docs/setup` and it configures
   enowx-rag for a project, idempotently. `GET /api/setup/probe` reports what's
   already installed (MCP per client, skill, AGENTS.md block) so finished steps

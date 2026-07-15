@@ -223,14 +223,21 @@ func main() {
 	runStdio(svc, cfg)
 }
 
-// runStdio starts the MCP server in stdio mode. This is the default mode
-// when --serve is not passed. Logs go to stderr (stdout is MCP protocol).
-func runStdio(svc *core.Service, cfg *RuntimeConfig) {
+// newMCPServer builds an *mcp.Server with all enowx-rag tools registered. It is
+// shared by both transports: stdio (single session) and the streamable HTTP
+// handler (many concurrent sessions).
+func newMCPServer(svc *core.Service) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "enowx-rag", Version: "0.1.0"}, &mcp.ServerOptions{
 		Instructions: "Per-project RAG memory: create collections, index project documents, and retrieve/semantic-search context. Connects to Qdrant/Chroma/pgvector with TEI embeddings.",
 	})
-
 	registerMCPTools(server, svc)
+	return server
+}
+
+// runStdio starts the MCP server in stdio mode. This is the default mode
+// when --serve is not passed. Logs go to stderr (stdout is MCP protocol).
+func runStdio(svc *core.Service, cfg *RuntimeConfig) {
+	server := newMCPServer(svc)
 
 	// Log tool configuration to stderr so it doesn't interfere with stdio transport.
 	fmt.Fprintf(os.Stderr, "enowx-rag mcp-server ready: vector_store=%s embedder=%s\n", cfg.VectorStore, cfg.Embedder)
@@ -239,7 +246,9 @@ func runStdio(svc *core.Service, cfg *RuntimeConfig) {
 	}
 }
 
-// runHTTP starts the HTTP API + SPA server on the given address.
+// runHTTP starts the HTTP API + SPA server on the given address, and also mounts
+// the MCP server over HTTP at /mcp so agents can use enowx-rag as a remote
+// daemon (behind RAG_ADMIN_TOKEN when set).
 func runHTTP(svc *core.Service, addr string, cfg *RuntimeConfig) {
 	// Extract the dist subdirectory from the embedded filesystem.
 	distFS, err := fs.Sub(web.Dist, "dist")
@@ -247,9 +256,21 @@ func runHTTP(svc *core.Service, addr string, cfg *RuntimeConfig) {
 		log.Fatalf("failed to get embedded dist: %v", err)
 	}
 
-	handler := httpapi.NewRouter(svc, distFS)
+	// MCP over HTTP: one server instance shared across all sessions. Stateless
+	// mode suits a request/response RAG tool server and is easy to scale.
+	mcpSrv := newMCPServer(svc)
+	mcpHandler := mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return mcpSrv },
+		&mcp.StreamableHTTPOptions{Stateless: true},
+	)
 
-	fmt.Fprintf(os.Stderr, "enowx-rag HTTP server starting on %s: vector_store=%s embedder=%s\n", addr, cfg.VectorStore, cfg.Embedder)
+	handler := httpapi.NewRouter(svc, distFS, mcpHandler)
+
+	authNote := "open (no RAG_ADMIN_TOKEN set)"
+	if os.Getenv("RAG_ADMIN_TOKEN") != "" {
+		authNote = "requires Authorization: Bearer <RAG_ADMIN_TOKEN>"
+	}
+	fmt.Fprintf(os.Stderr, "enowx-rag HTTP server starting on %s: vector_store=%s embedder=%s; MCP at /mcp (%s)\n", addr, cfg.VectorStore, cfg.Embedder, authNote)
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("HTTP server error: %v", err)
 	}

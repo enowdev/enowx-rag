@@ -15,7 +15,9 @@ import (
 // NewRouter creates a chi router with all API routes and SPA fallback.
 // svc is the core service layer shared with MCP stdio mode.
 // ui is the embedded filesystem containing the SPA dist (index.html + assets).
-func NewRouter(svc *core.Service, ui fs.FS) http.Handler {
+// mcpHandler, when non-nil, is mounted at /mcp so agents can use enowx-rag as a
+// remote MCP server; it is gated by the same RAG_ADMIN_TOKEN as /api.
+func NewRouter(svc *core.Service, ui fs.FS, mcpHandler http.Handler) http.Handler {
 	h := &Handlers{svc: svc}
 
 	r := chi.NewRouter()
@@ -73,6 +75,17 @@ func NewRouter(svc *core.Service, ui fs.FS) http.Handler {
 		// Unknown /api/ routes return 404 JSON (not SPA fallback)
 		r.NotFound(h.NotFound)
 	})
+
+	// MCP over HTTP at /mcp — remote MCP transport. Gated by the same admin
+	// token as /api. Must be registered before the SPA catch-all below, or the
+	// catch-all would swallow /mcp requests.
+	if mcpHandler != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(AdminTokenMiddleware)
+			r.Handle("/mcp", mcpHandler)
+			r.Handle("/mcp/*", mcpHandler)
+		})
+	}
 
 	// SPA fallback: serve embedded dist files, fall back to index.html
 	// for client-side routes (e.g., /playground, /chunks, /setup).

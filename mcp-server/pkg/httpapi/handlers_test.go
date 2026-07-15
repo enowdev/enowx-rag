@@ -119,7 +119,7 @@ var _ core.ProjectLister = (*mockProvider)(nil)
 func newTestServer(t *testing.T, provider rag.Provider, ui fs.FS) (*core.Service, http.Handler) {
 	t.Helper()
 	svc := core.NewService(provider, nil, nil)
-	return svc, NewRouter(svc, ui)
+	return svc, NewRouter(svc, ui, nil)
 }
 
 // --- Tests ---
@@ -444,7 +444,7 @@ func TestSearch_BadProject_NoLister(t *testing.T) {
 		points: nil, // no points → project doesn't exist
 	}
 	svc := core.NewService(p, nil, nil)
-	router := NewRouter(svc, nil)
+	router := NewRouter(svc, nil, nil)
 
 	body := `{"project_id": "nonexistent", "query": "hello"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/search", strings.NewReader(body))

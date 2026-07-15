@@ -9,7 +9,30 @@ Per-project RAG memory MCP server. Each project gets its own vector collection, 
 The server runs in **two modes** from a single binary:
 
 - **MCP stdio mode** (default): `enowx-rag` — talks to AI coding tools over stdio via the Model Context Protocol.
-- **HTTP serve mode**: `enowx-rag --serve` — starts an HTTP server with a REST API, SSE event stream, and an embedded React dashboard UI (playground, chunks browser, onboarding wizard).
+- **HTTP serve mode**: `enowx-rag --serve` — starts an HTTP server with a REST API, SSE event stream, an embedded React dashboard, **and MCP over HTTP at `/mcp`** so agents can connect to enowx-rag as a remote daemon (e.g. on a VPS).
+
+### Remote daemon (MCP over HTTP)
+
+Run `enowx-rag --serve` on a host and connect agents remotely. Set `RAG_ADMIN_TOKEN` to secure it — it gates both `/api/*` and `/mcp` with a bearer token (unset = no auth, only for trusted networks). Put a TLS reverse proxy in front for public use.
+
+```bash
+RAG_ADMIN_TOKEN=$(openssl rand -hex 32) ./enowx-rag --serve --addr :7777
+```
+
+Point an MCP client at the daemon:
+
+```json
+{
+  "mcpServers": {
+    "enowx-rag": {
+      "url": "https://rag.example.com/mcp",
+      "headers": { "Authorization": "Bearer <RAG_ADMIN_TOKEN>" }
+    }
+  }
+}
+```
+
+All six MCP tools work identically to local stdio mode. See the **Docs → Remote / daemon** page for details.
 
 ---
 

@@ -28,6 +28,7 @@ var docSections = []docSection{
 	{ID: "search", Title: "Search (hybrid / rerank / compress)", Body: docSearch},
 	{ID: "migration", Title: "Migration", Body: docMigration},
 	{ID: "metrics", Title: "Metrics", Body: docMetrics},
+	{ID: "remote", Title: "Remote / daemon", Body: docRemote},
 	{ID: "agent-setup", Title: "Agent setup", Body: docAgentSetup},
 }
 
@@ -286,6 +287,31 @@ func docMetrics(base, _ string) string {
 		"## Persistence\nMetrics are stored in a local SQLite file (`~/.enowx-rag/metrics.db`, "+
 		"pure-Go, no external service), so they survive restarts on **any** backend. If the file "+
 		"can't be opened, metrics fall back to in-memory (`\"persistent\": false`).", base)
+}
+
+func docRemote(base, _ string) string {
+	return "# Remote / daemon\n\n" +
+		"Run enowx-rag as a **daemon** (e.g. on a VPS) and let agents connect **remotely** over " +
+		"MCP-over-HTTP — a centralized RAG memory shared across machines/agents.\n\n" +
+		"## Run the daemon\n" +
+		"`enowx-rag --serve` exposes three things on one port:\n" +
+		"- `/api/*` — REST API\n" +
+		"- `/mcp` — MCP server over HTTP (Streamable HTTP transport, stateless)\n" +
+		"- `/` — the web dashboard\n\n" +
+		"## Secure it (required when public)\n" +
+		"Set `RAG_ADMIN_TOKEN` to a strong secret. It gates **both** `/api/*` and `/mcp` with " +
+		"`Authorization: Bearer <token>`. When unset, there is **no auth** — only safe for a trusted " +
+		"local network. Terminate TLS with a reverse proxy (Caddy/nginx) in front.\n\n" +
+		"    RAG_ADMIN_TOKEN=$(openssl rand -hex 32) enowx-rag --serve --addr :7777\n\n" +
+		"## Connect an agent (MCP remote)\n" +
+		"Point your MCP client at the daemon URL with the bearer header:\n\n" +
+		"    {\n      \"mcpServers\": {\n        \"enowx-rag\": {\n          \"url\": \"https://rag.example.com/mcp\",\n" +
+		"          \"headers\": { \"Authorization\": \"Bearer <RAG_ADMIN_TOKEN>\" }\n        }\n      }\n    }\n\n" +
+		"All six MCP tools (see *MCP tools*) work identically to the local stdio mode.\n\n" +
+		"## Local vs. remote\n" +
+		"- **Local**: run `enowx-rag` with no flags — stdio, spawned by the client. No daemon needed.\n" +
+		"- **Remote**: run `enowx-rag --serve` on a host; clients connect to `/mcp` by URL.\n\n" +
+		"The vector store (Qdrant/pgvector) can be local to the daemon or a managed cloud instance."
 }
 
 func docAgentSetup(base, exe string) string {

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/enowdev/enowx-rag/pkg/core"
 )
 
 // helperClearRagEnv unsets all RAG_ env vars that could interfere with
@@ -938,5 +940,47 @@ func TestDocsEndpoints(t *testing.T) {
 	router.ServeHTTP(w, req)
 	if w.Code != 404 {
 		t.Errorf("unknown section = %d, want 404", w.Code)
+	}
+}
+
+// TestMCPMount_Gated verifies /mcp is mounted and gated by RAG_ADMIN_TOKEN.
+func TestMCPMount_Gated(t *testing.T) {
+	// A trivial handler stands in for the real MCP handler.
+	dummy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("mcp-ok"))
+	})
+
+	// With a token set: no/invalid bearer -> 401.
+	t.Setenv("RAG_ADMIN_TOKEN", "s3cret")
+	router := NewRouter(core.NewService(&mockProvider{}, nil, nil), nil, dummy)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("{}"))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("/mcp without token = %d, want 401", w.Code)
+	}
+
+	// With the correct bearer -> reaches the handler (200 mcp-ok).
+	req = httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("{}"))
+	req.Header.Set("Authorization", "Bearer s3cret")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Body.String() != "mcp-ok" {
+		t.Fatalf("/mcp with token = %d %q, want 200 mcp-ok", w.Code, w.Body.String())
+	}
+}
+
+// TestMCPMount_OpenWhenNoToken verifies /mcp is reachable without auth when no
+// token is set (local use).
+func TestMCPMount_OpenWhenNoToken(t *testing.T) {
+	t.Setenv("RAG_ADMIN_TOKEN", "")
+	dummy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	router := NewRouter(core.NewService(&mockProvider{}, nil, nil), nil, dummy)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("{}"))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("/mcp without token set = %d, want 200 (open)", w.Code)
 	}
 }
