@@ -54,15 +54,19 @@ func NewRouter(svc *core.Service, ui fs.FS) http.Handler {
 			// install-mcp writes to another tool's config file in the user's
 			// home dir — same risk class as /setup/apply, so gate it too.
 			r.Post("/setup/install-mcp", h.SetupInstallMCP)
+			// write-agents-md writes AGENTS.md into a project dir — gate it.
+			r.Post("/setup/write-agents-md", h.SetupWriteAgentsMD)
 			// migrate writes data into a destination vector store (and may use
 			// user-supplied credentials) — gate it.
 			r.Post("/migrate", h.Migrate)
 		})
 		r.Get("/setup/status", h.SetupStatus)
-		// Read-only helpers for the install step (no file writes).
+		// Read-only helpers for the install / agent-setup step (no file writes).
 		r.Get("/setup/clients", h.SetupClients)
 		r.Get("/setup/mcp-snippet", h.SetupMCPSnippet)
 		r.Get("/setup/skill-guide", h.SetupSkillGuide)
+		r.Get("/setup/probe", h.SetupProbe)
+		r.Get("/docs/setup", h.SetupDocs)
 
 		// Unknown /api/ routes return 404 JSON (not SPA fallback)
 		r.NotFound(h.NotFound)

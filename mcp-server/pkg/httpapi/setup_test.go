@@ -799,3 +799,92 @@ func TestMigrateEndpointValidates(t *testing.T) {
 		t.Fatalf("missing dest = %d, want 400", w.Code)
 	}
 }
+
+// TestWriteAgentsMD_CreateAndMerge verifies create, append (preserve), and
+// idempotent update via markers.
+func TestWriteAgentsMD_CreateAndMerge(t *testing.T) {
+	dir := t.TempDir()
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	call := func(projectID string) int {
+		body := `{"dir":"` + dir + `","project_id":"` + projectID + `"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/setup/write-agents-md", strings.NewReader(body))
+		req.RemoteAddr = "127.0.0.1:1"
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	agentsPath := filepath.Join(dir, "AGENTS.md")
+
+	// 1. Create (no file yet).
+	if code := call("proj1"); code != 200 {
+		t.Fatalf("create = %d, want 200", code)
+	}
+	data, _ := os.ReadFile(agentsPath)
+	if !strings.Contains(string(data), "<!-- enowx-rag:start -->") || !strings.Contains(string(data), "project: proj1") {
+		t.Errorf("created AGENTS.md missing block:\n%s", data)
+	}
+
+	// 2. Update (markers present) — must stay a single block, updated id.
+	if code := call("proj2"); code != 200 {
+		t.Fatalf("update = %d, want 200", code)
+	}
+	data, _ = os.ReadFile(agentsPath)
+	if strings.Count(string(data), "<!-- enowx-rag:start -->") != 1 {
+		t.Errorf("update should keep exactly one block:\n%s", data)
+	}
+	if !strings.Contains(string(data), "project: proj2") || strings.Contains(string(data), "project: proj1") {
+		t.Errorf("update did not replace project id:\n%s", data)
+	}
+}
+
+// TestWriteAgentsMD_AppendPreservesUserContent verifies existing content is kept
+// when there are no markers.
+func TestWriteAgentsMD_AppendPreservesUserContent(t *testing.T) {
+	dir := t.TempDir()
+	userContent := "# My rules\n\nDo not break the build.\n"
+	os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(userContent), 0o644)
+
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+	body := `{"dir":"` + dir + `","project_id":"x"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/write-agents-md", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:1"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("append = %d, want 200", w.Code)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if !strings.Contains(string(data), "Do not break the build") {
+		t.Error("user content was lost")
+	}
+	if !strings.Contains(string(data), "<!-- enowx-rag:start -->") {
+		t.Error("enowx-rag block was not appended")
+	}
+}
+
+// TestProbeEndpoint verifies probe reports skill/agents_md status.
+func TestProbeEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("hi <!-- enowx-rag:start -->x<!-- enowx-rag:end -->"), 0o644)
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/probe?client=cursor&dir="+dir, nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("probe = %d, want 200", w.Code)
+	}
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	am := resp["agents_md"].(map[string]any)
+	if am["exists"] != true || am["has_block"] != true {
+		t.Errorf("agents_md status wrong: %v", am)
+	}
+	if _, ok := resp["mcp"].(map[string]any)["cursor"]; !ok {
+		t.Error("mcp status missing cursor")
+	}
+}

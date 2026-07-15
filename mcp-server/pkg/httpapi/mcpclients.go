@@ -67,6 +67,19 @@ func expandHome(p string) string {
 	return p
 }
 
+// isInstalled reports whether the enowx-rag server is already present in this
+// client's global config. It reads the config file and checks for the server
+// name — a robust cross-format signal since the name is unique and appears as a
+// key (JSON/TOML/context_servers) or a name field (YAML list). Returns false if
+// the file doesn't exist.
+func (c mcpClient) isInstalled() bool {
+	data, err := os.ReadFile(expandHome(c.GlobalPath))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), mcpServerName)
+}
+
 // resolvePath returns the absolute config path for a client + scope. For
 // project scope, projectDir is joined with the client's project-relative path.
 func (c mcpClient) resolvePath(scope, projectDir string) (string, error) {

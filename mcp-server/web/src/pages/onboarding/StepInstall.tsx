@@ -44,6 +44,16 @@ export function StepInstall({ onBack, onNext }: StepInstallProps) {
     })
   }
 
+  // Short prompt an agent runs: it reads the setup docs from the API, then does
+  // only the missing steps. Uses the current origin so it works wherever hosted.
+  const docsURL = `${window.location.origin}/api/docs/setup`
+  const agentPrompt =
+    `Set up enowx-rag (per-project RAG memory) for this project. ` +
+    `First read the setup instructions at ${docsURL} and follow them exactly: ` +
+    `probe what's already installed, then install only the missing pieces ` +
+    `(MCP server for my client, the skill, and the AGENTS.md block). ` +
+    `Use my client id (e.g. claude-code) and this project's absolute directory. Skip anything already set up.`
+
   const runInstall = async () => {
     if (!selected) return
     setInstalling(true)
@@ -182,6 +192,25 @@ export function StepInstall({ onBack, onNext }: StepInstallProps) {
             </div>
           </div>
         )}
+
+        {/* Agent setup: one prompt an AI agent runs to set up MCP + skill + AGENTS.md */}
+        <div style={{ marginTop: 22 }}>
+          <div className="field-label">Or: set up with an AI agent</div>
+          <p style={{ color: 'var(--text-dim)', fontSize: 12.5, marginTop: 0 }}>
+            Paste this prompt into your AI coding agent. It reads the setup docs and installs only
+            what's missing (skips MCP/skill/AGENTS.md that already exist).
+          </p>
+          <div className="code-block">
+            <div className="code-head">
+              <span className="fname mono">setup prompt</span>
+              <button className="copy-btn" onClick={() => copy('prompt', agentPrompt)}>
+                {copied === 'prompt' ? <Check size={12} /> : <Copy size={12} />}
+                {copied === 'prompt' ? 'copied' : 'copy'}
+              </button>
+            </div>
+            <pre className="code-body mono">{agentPrompt}</pre>
+          </div>
+        </div>
       </div>
       <div className="nav-buttons">
         <button className="btn" onClick={onBack}>

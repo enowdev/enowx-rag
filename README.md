@@ -96,8 +96,20 @@ When running in `--serve` mode, the following REST endpoints are available:
 | `POST` | `/api/setup/test` | Test connectivity (localhost or admin token required) |
 | `POST` | `/api/setup/apply` | Save config to `~/.enowx-rag/config.yaml` (localhost or admin token required) |
 | `GET` | `/api/setup/status` | Check if config exists |
+| `POST` | `/api/setup/install-mcp` | Install the MCP server into a client's config (merge + backup) |
+| `GET` | `/api/setup/probe` | Report what's installed (MCP per client, skill, AGENTS.md block) for idempotent setup |
+| `POST` | `/api/setup/write-agents-md` | Merge the enowx-rag block into a project's AGENTS.md (localhost/admin token) |
+| `POST` | `/api/migrate` | Migrate/re-embed a project into a new destination (async, SSE progress) |
+| `GET` | `/api/docs/setup` | Markdown setup instructions for an AI agent to follow |
 
-Non-API routes serve the embedded React SPA (client-side routing for `/playground`, `/chunks`, `/setup`, etc.).
+Non-API routes serve the embedded React SPA (client-side routing for `/playground`, `/chunks`, `/migration`, `/setup`, etc.).
+
+**Agent-driven setup.** Paste a short prompt into your AI coding agent telling it
+to read `GET /api/docs/setup` and follow it. The agent probes what's already in
+place (`GET /api/setup/probe`) and installs only the missing pieces — the MCP
+server (`POST /api/setup/install-mcp`), the skill, and the project's AGENTS.md
+block (`POST /api/setup/write-agents-md`, merged idempotently). The Install step
+of the wizard shows the copy-paste prompt.
 
 **Query metrics** are recorded for every search and exposed at `/api/metrics`:
 latency percentiles, Voyage token usage (embed + rerank), and — for hybrid

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Agent setup**: point an AI agent at `GET /api/docs/setup` and it configures
+  enowx-rag for a project, idempotently. `GET /api/setup/probe` reports what's
+  already installed (MCP per client, skill, AGENTS.md block) so finished steps
+  are skipped; `POST /api/setup/write-agents-md` merges an enowx-rag section into
+  the project's AGENTS.md via `<!-- enowx-rag:start/end -->` markers (create /
+  append / update, preserving the user's own content). The Install step shows a
+  short copy-paste prompt.
 - **Migration** page + engine: re-embed a project's stored text into a new
   destination to change embedding model/dimension or move between vector stores
   (Qdrant/pgvector/Chroma). Raw vectors aren't copied (they're model-specific);
