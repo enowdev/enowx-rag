@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar'
 import { Topbar } from './components/Topbar'
 import { Overview } from './pages/Overview'
 import { Migration } from './pages/Migration'
+import { Docs } from './pages/Docs'
 import { Playground } from './pages/Playground'
 import { Chunks } from './pages/Chunks'
 import { Setup } from './pages/Setup'
@@ -10,7 +11,7 @@ import { Wizard } from './pages/onboarding/Wizard'
 import { useTheme } from './lib/useTheme'
 import { api } from './lib/api'
 
-export type Page = 'overview' | 'playground' | 'chunks' | 'migration' | 'setup'
+export type Page = 'overview' | 'playground' | 'chunks' | 'migration' | 'docs' | 'setup'
 
 export interface ProjectInfo {
   projectID: string
@@ -107,6 +108,7 @@ function App() {
           {page === 'playground' && <Playground activeProject={activeProject} sharedQuery={sharedQuery} onSharedQueryChange={setSharedQuery} />}
           {page === 'chunks' && <Chunks activeProject={activeProject} />}
           {page === 'migration' && <Migration activeProject={activeProject} projects={projects} />}
+          {page === 'docs' && <Docs />}
           {page === 'setup' && <Setup />}
         </div>
       </div>

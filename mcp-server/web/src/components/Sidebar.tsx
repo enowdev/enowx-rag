@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { LayoutGrid, Search, List, Settings, ArrowRightLeft } from 'lucide-react'
+import { LayoutGrid, Search, List, Settings, ArrowRightLeft, BookOpen } from 'lucide-react'
 import type { Page, ProjectInfo } from '../App'
 import { api } from '../lib/api'
 import { useEvents } from '../lib/sse'
@@ -18,6 +18,7 @@ const navItems: { label: string; page: Page; icon: typeof LayoutGrid }[] = [
   { label: 'Playground', page: 'playground', icon: Search },
   { label: 'Chunks', page: 'chunks', icon: List },
   { label: 'Migration', page: 'migration', icon: ArrowRightLeft },
+  { label: 'Docs', page: 'docs', icon: BookOpen },
   { label: 'Setup', page: 'setup', icon: Settings },
 ]
 

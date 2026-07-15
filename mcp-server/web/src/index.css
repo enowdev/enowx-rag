@@ -2096,3 +2096,43 @@
   color: var(--text-dim);
   font-size: 12.5px;
 }
+
+/* ===== Docs page ===== */
+.docs-body {
+  line-height: 1.65;
+}
+.docs-h1 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 4px 0 10px;
+  color: var(--text);
+}
+.docs-h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 20px 0 8px;
+  color: var(--text);
+}
+.docs-p {
+  margin: 6px 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.docs-li {
+  margin: 4px 0 4px 18px;
+  color: var(--text-dim);
+  font-size: 13px;
+  list-style: disc;
+}
+.docs-endpoint {
+  margin: 8px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.docs-body code.mono {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}

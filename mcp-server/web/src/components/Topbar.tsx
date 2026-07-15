@@ -13,6 +13,7 @@ const pageLabels: Record<Page, string> = {
   playground: 'Playground',
   chunks: 'Chunks',
   migration: 'Migration',
+  docs: 'Docs',
   setup: 'Setup',
 }
 
