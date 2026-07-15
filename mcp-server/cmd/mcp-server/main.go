@@ -161,6 +161,23 @@ type ScanProjectInput struct {
 	Directory string `json:"directory" jsonschema:"Absolute path to the project directory to scan and index"`
 }
 
+// EmptyInput is used by tools that take no arguments (e.g. rag_list_projects).
+type EmptyInput struct{}
+
+type ProjectIDInput struct {
+	ProjectID string `json:"project_id" jsonschema:"Project identifier"`
+}
+
+type ListPointsInput struct {
+	ProjectID  string `json:"project_id" jsonschema:"Project identifier"`
+	SourceFile string `json:"source_file" jsonschema:"Optional: only list chunks from this source file"`
+}
+
+type DeletePointsInput struct {
+	ProjectID string   `json:"project_id" jsonschema:"Project identifier"`
+	PointIDs  []string `json:"point_ids" jsonschema:"IDs of the chunks/points to delete"`
+}
+
 func main() {
 	// Subcommand dispatch (must run before flag.Parse, which only handles the
 	// default mode's flags). `enowx-rag setup [--run]` generates/runs the
@@ -276,7 +293,7 @@ func runHTTP(svc *core.Service, addr string, cfg *RuntimeConfig) {
 	}
 }
 
-// registerMCPTools registers all six MCP tools on the server, each as a thin
+// registerMCPTools registers all MCP tools on the server, each as a thin
 // wrapper over the core.Service methods. No direct provider/indexer calls
 // are made inside the closures.
 func registerMCPTools(server *mcp.Server, svc *core.Service) {
@@ -358,6 +375,76 @@ func registerMCPTools(server *mcp.Server, svc *core.Service) {
 			"points_deleted": result.Deleted,
 			"files_scanned":  result.FilesScanned,
 			"stale_error":    result.StaleError,
+		}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rag_list_projects",
+		Description: "List all RAG projects with their chunk counts. Use this to discover what memory is available before searching.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in EmptyInput) (*mcp.CallToolResult, any, error) {
+		stats, err := svc.ListProjects(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if stats == nil {
+			stats = []core.ProjectStat{}
+		}
+		return nil, map[string]any{"projects": stats}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rag_project_exists",
+		Description: "Check whether a project has any indexed memory. Useful before searching or indexing.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in ProjectIDInput) (*mcp.CallToolResult, any, error) {
+		return nil, map[string]any{"project_id": in.ProjectID, "exists": svc.ProjectExists(ctx, in.ProjectID)}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rag_list_points",
+		Description: "List indexed chunks in a project (id, source file, content preview), optionally filtered by source file. Use to inspect what is stored.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in ListPointsInput) (*mcp.CallToolResult, any, error) {
+		filter := map[string]string{}
+		if in.SourceFile != "" {
+			filter["source_file"] = in.SourceFile
+		}
+		points, err := svc.ListPoints(ctx, in.ProjectID, filter)
+		if err != nil {
+			return nil, nil, err
+		}
+		if points == nil {
+			points = []rag.PointInfo{}
+		}
+		return nil, map[string]any{"points": points, "count": len(points)}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rag_delete_points",
+		Description: "Delete specific chunks/points from a project by their IDs (e.g. to remove stale entries without a full re-index).",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in DeletePointsInput) (*mcp.CallToolResult, any, error) {
+		if err := svc.DeletePoints(ctx, in.ProjectID, in.PointIDs); err != nil {
+			return nil, nil, err
+		}
+		return nil, map[string]any{"status": "deleted", "project_id": in.ProjectID, "count": len(in.PointIDs)}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rag_stats",
+		Description: "Get aggregate RAG statistics: projects, total chunks, embedding model, query latency, and token usage.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in EmptyInput) (*mcp.CallToolResult, any, error) {
+		stats, err := svc.ListProjects(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		totalChunks := 0
+		for _, s := range stats {
+			totalChunks += s.ChunkCount
+		}
+		m := svc.MetricsSnapshot(ctx)
+		return nil, map[string]any{
+			"total_projects": len(stats),
+			"total_chunks":   totalChunks,
+			"embed_model":    svc.EmbedModel(),
+			"metrics":        m,
 		}, nil
 	})
 }

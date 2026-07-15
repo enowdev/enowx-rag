@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **More MCP tools** (6 → 11): `rag_list_projects` (discover projects + chunk
+  counts), `rag_project_exists`, `rag_list_points` (inspect indexed chunks),
+  `rag_delete_points` (remove stale chunks without a full re-index), and
+  `rag_stats` (projects/chunks/embed-model/latency/tokens). Thin wrappers over
+  existing core.Service methods; available over stdio and remote HTTP.
 - **MCP over HTTP (remote daemon)**: `enowx-rag --serve` now also exposes the MCP
   server at `/mcp` (Streamable HTTP transport, stateless), so agents can use
   enowx-rag as a centralized remote daemon — e.g. on a VPS — instead of a local

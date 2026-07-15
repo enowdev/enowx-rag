@@ -152,21 +152,33 @@ the dashboard.`, exe, base)
 
 func docMCPTools(_, _ string) string {
 	return "# MCP tools\n\n" +
-		"enowx-rag exposes six MCP tools over stdio. Project IDs isolate collections.\n\n" +
+		"enowx-rag exposes these MCP tools (over stdio or remote HTTP). Project IDs isolate " +
+		"collections.\n\n" +
+		"## Write / index\n" +
 		"## `rag_create_project`\nCreate a project collection. Input: `project_id`.\n\n" +
-		"## `rag_delete_project`\nDelete a project collection and all its data. Input: `project_id`.\n\n" +
 		"## `rag_index`\nIndex documents you pass directly. Input: `project_id`, `documents` " +
 		"(each `{id?, content, meta?}`). Use for saving facts/decisions.\n\n" +
 		"## `rag_index_project`\nScan a directory and index all code/text files (insertions, edits, " +
 		"deletions handled incrementally; skips node_modules/.git/vendor/dist/build). " +
 		"Input: `project_id`, `directory`. Run this whenever the codebase changes.\n\n" +
+		"## Read / search\n" +
 		"## `rag_semantic_search`\nSearch a project. Input: `project_id`, `query`, `limit`, and " +
 		"optionally `recall`, `hybrid`, `rerank`, `compress` (hybrid/rerank default on). Returns " +
 		"chunks with scores.\n\n" +
 		"## `rag_retrieve_context`\nLike search but returns a compact concatenated context string " +
 		"plus the chunks — convenient for feeding an LLM. Same options as `rag_semantic_search`.\n\n" +
-		"**Typical loop:** retrieve before coding → do the work → `rag_index` new facts → " +
-		"`rag_index_project` to sync file changes."
+		"## Inspect / manage\n" +
+		"## `rag_list_projects`\nList all projects with chunk counts. Discover available memory " +
+		"before searching. No input.\n\n" +
+		"## `rag_project_exists`\nCheck whether a project has indexed memory. Input: `project_id`.\n\n" +
+		"## `rag_list_points`\nList chunks in a project (id, source file, preview), optionally " +
+		"filtered by `source_file`. Input: `project_id`, `source_file?`.\n\n" +
+		"## `rag_delete_points`\nDelete specific chunks by ID (remove stale entries without a full " +
+		"re-index). Input: `project_id`, `point_ids`.\n\n" +
+		"## `rag_delete_project`\nDelete a project collection and all its data. Input: `project_id`.\n\n" +
+		"## `rag_stats`\nAggregate stats: projects, total chunks, embed model, latency, tokens. No input.\n\n" +
+		"**Typical loop:** `rag_list_projects` to see what exists → `rag_retrieve_context` before " +
+		"coding → do the work → `rag_index` new facts → `rag_index_project` to sync file changes."
 }
 
 func docAPIReference(base, _ string) string {

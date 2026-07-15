@@ -32,7 +32,7 @@ Point an MCP client at the daemon:
 }
 ```
 
-All six MCP tools work identically to local stdio mode. See the **Docs → Remote / daemon** page for details.
+All MCP tools work identically to local stdio mode. See the **Docs → Remote / daemon** page for details.
 
 ---
 
@@ -76,7 +76,7 @@ Run without `--serve` to use the MCP stdio transport. This is the mode you confi
 ./enowx-rag
 ```
 
-All six MCP tools are available: `rag_create_project`, `rag_delete_project`, `rag_index`, `rag_index_project`, `rag_semantic_search`, `rag_retrieve_context`. Logs go to stderr (stdout is the MCP protocol stream).
+MCP tools available: `rag_create_project`, `rag_delete_project`, `rag_index`, `rag_index_project`, `rag_semantic_search`, `rag_retrieve_context`, `rag_list_projects`, `rag_project_exists`, `rag_list_points`, `rag_delete_points`, `rag_stats`. Logs go to stderr (stdout is the MCP protocol stream).
 
 ### HTTP serve mode
 
