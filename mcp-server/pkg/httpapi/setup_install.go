@@ -12,7 +12,13 @@ import (
 // mcpServerEntry builds the command + env for the enowx-rag MCP server from the
 // currently saved config. The command is this binary's own path so the client
 // launches the exact server the user configured.
-func mcpServerEntry() (mcpEntry, error) {
+// mcpServerEntry builds the MCP config entry. When remoteURL is non-empty it
+// returns a remote entry (url + optional bearer token); otherwise a local stdio
+// entry (this binary's path + env from the saved config).
+func mcpServerEntry(remoteURL, token string) (mcpEntry, error) {
+	if remoteURL != "" {
+		return mcpEntry{RemoteURL: remoteURL, Token: token}, nil
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return mcpEntry{}, fmt.Errorf("resolve binary path: %w", err)
@@ -76,6 +82,9 @@ func (h *Handlers) SetupInstallMCP(w http.ResponseWriter, r *http.Request) {
 		ClientID   string `json:"client_id"`
 		Scope      string `json:"scope"`       // "global" (default) or "project"
 		ProjectDir string `json:"project_dir"` // required for scope=project
+		Mode       string `json:"mode"`        // "local" (default) or "remote"
+		RemoteURL  string `json:"remote_url"`  // required for mode=remote
+		Token      string `json:"token"`       // optional bearer for remote
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body")
@@ -90,12 +99,16 @@ func (h *Handlers) SetupInstallMCP(w http.ResponseWriter, r *http.Request) {
 	if scope == "" {
 		scope = "global"
 	}
+	if req.Mode == "remote" && req.RemoteURL == "" {
+		writeErr(w, http.StatusBadRequest, "remote_url is required for mode=remote")
+		return
+	}
 	path, err := client.resolvePath(scope, req.ProjectDir)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	entry, err := mcpServerEntry()
+	entry, err := mcpServerEntry(req.RemoteURL, req.Token)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -123,7 +136,13 @@ func (h *Handlers) SetupMCPSnippet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "unknown client_id")
 		return
 	}
-	entry, err := mcpServerEntry()
+	// mode=remote&remote_url=...&token=... produces a remote (url + headers)
+	// snippet; otherwise a local stdio snippet.
+	remoteURL := r.URL.Query().Get("remote_url")
+	if r.URL.Query().Get("mode") == "remote" && remoteURL == "" {
+		remoteURL = "https://YOUR-DAEMON-HOST/mcp" // placeholder so users see the shape
+	}
+	entry, err := mcpServerEntry(remoteURL, r.URL.Query().Get("token"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

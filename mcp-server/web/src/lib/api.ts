@@ -250,15 +250,20 @@ export const api = {
 
   mcpClients: () => fetchJSON<McpClient[]>(`${API_BASE}/setup/clients`),
 
-  installMcp: (req: { client_id: string; scope?: string; project_dir?: string }) =>
+  installMcp: (req: { client_id: string; scope?: string; project_dir?: string; mode?: string; remote_url?: string; token?: string }) =>
     fetchJSON<InstallMcpResponse>(`${API_BASE}/setup/install-mcp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
     }),
 
-  mcpSnippet: (clientId: string) =>
-    fetchJSON<McpSnippetResponse>(`${API_BASE}/setup/mcp-snippet?client_id=${encodeURIComponent(clientId)}`),
+  mcpSnippet: (clientId: string, opts?: { mode?: string; remote_url?: string; token?: string }) => {
+    const qs = new URLSearchParams({ client_id: clientId })
+    if (opts?.mode) qs.set('mode', opts.mode)
+    if (opts?.remote_url) qs.set('remote_url', opts.remote_url)
+    if (opts?.token) qs.set('token', opts.token)
+    return fetchJSON<McpSnippetResponse>(`${API_BASE}/setup/mcp-snippet?${qs.toString()}`)
+  },
 
   skillGuide: () => fetchJSON<SkillGuideResponse>(`${API_BASE}/setup/skill-guide`),
 

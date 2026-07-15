@@ -166,3 +166,41 @@ func TestInstallNoBackupWhenNew(t *testing.T) {
 		t.Errorf("config not written: %v", err)
 	}
 }
+
+// TestRemoteEntry_JSON verifies a remote entry produces url + headers, not command.
+func TestRemoteEntry_JSON(t *testing.T) {
+	entry := mcpEntry{RemoteURL: "https://rag.example.com/mcp", Token: "sekret"}
+	out, err := mergeJSONMap(nil, "mcpServers", jsonEntryMap(entry, nil, false))
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	var root map[string]any
+	json.Unmarshal(out, &root)
+	e := root["mcpServers"].(map[string]any)["enowx-rag"].(map[string]any)
+	if e["url"] != "https://rag.example.com/mcp" {
+		t.Errorf("url missing: %v", e)
+	}
+	if _, ok := e["command"]; ok {
+		t.Error("remote entry must not have command")
+	}
+	hdr := e["headers"].(map[string]any)
+	if hdr["Authorization"] != "Bearer sekret" {
+		t.Errorf("auth header wrong: %v", hdr)
+	}
+}
+
+// TestRemoteEntry_TOML / YAML verify remote form in the other formats.
+func TestRemoteEntry_TOMLYAML(t *testing.T) {
+	entry := mcpEntry{RemoteURL: "https://x/mcp", Token: "t"}
+	toml := tomlSection(entry)
+	if !strings.Contains(toml, `url = "https://x/mcp"`) || strings.Contains(toml, "command") {
+		t.Errorf("toml remote wrong:\n%s", toml)
+	}
+	if !strings.Contains(toml, "Authorization = \"Bearer t\"") {
+		t.Errorf("toml headers missing:\n%s", toml)
+	}
+	yaml := yamlListSnippet(entry)
+	if !strings.Contains(yaml, "url: https://x/mcp") || strings.Contains(yaml, "command:") {
+		t.Errorf("yaml remote wrong:\n%s", yaml)
+	}
+}

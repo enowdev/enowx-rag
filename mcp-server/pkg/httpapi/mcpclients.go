@@ -95,11 +95,17 @@ func (c mcpClient) resolvePath(scope, projectDir string) (string, error) {
 	return expandHome(c.GlobalPath), nil
 }
 
-// mcpEntry is the command+env for the enowx-rag server, shared by all formats.
+// mcpEntry describes the enowx-rag server for a client config. In local mode it
+// carries Command + Env (stdio); in remote mode it carries RemoteURL (+ optional
+// Token) so the client connects to a daemon over HTTP.
 type mcpEntry struct {
-	Command string
-	Env     map[string]string
+	Command   string
+	Env       map[string]string
+	RemoteURL string // when set, produce a remote (url + headers) entry
+	Token     string // optional bearer token for the remote daemon
 }
+
+func (e mcpEntry) isRemote() bool { return e.RemoteURL != "" }
 
 // orderedEnvKeys returns env keys in a stable order for deterministic output.
 func (e mcpEntry) orderedEnvKeys() []string {
@@ -130,6 +136,13 @@ func (c mcpClient) snippet(entry mcpEntry) (path, content string) {
 }
 
 func jsonEntryMap(entry mcpEntry, extra map[string]any, withArgs bool) map[string]any {
+	if entry.isRemote() {
+		m := map[string]any{"url": entry.RemoteURL}
+		if entry.Token != "" {
+			m["headers"] = map[string]any{"Authorization": "Bearer " + entry.Token}
+		}
+		return m
+	}
 	m := map[string]any{"command": entry.Command}
 	if withArgs {
 		m["args"] = []any{}
@@ -158,6 +171,13 @@ func jsonSnippet(rootKey string, entry mcpEntry, extra map[string]any, withArgs 
 func tomlSection(entry mcpEntry) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "[mcp_servers.%s]\n", mcpServerName)
+	if entry.isRemote() {
+		fmt.Fprintf(&sb, "url = %q\n", entry.RemoteURL)
+		if entry.Token != "" {
+			fmt.Fprintf(&sb, "\n[mcp_servers.%s.headers]\nAuthorization = %q\n", mcpServerName, "Bearer "+entry.Token)
+		}
+		return sb.String()
+	}
 	fmt.Fprintf(&sb, "command = %q\n\n", entry.Command)
 	fmt.Fprintf(&sb, "[mcp_servers.%s.env]\n", mcpServerName)
 	for _, k := range entry.orderedEnvKeys() {
@@ -170,6 +190,13 @@ func yamlListSnippet(entry mcpEntry) string {
 	var sb strings.Builder
 	sb.WriteString("mcpServers:\n")
 	fmt.Fprintf(&sb, "  - name: %s\n", mcpServerName)
+	if entry.isRemote() {
+		fmt.Fprintf(&sb, "    url: %s\n", entry.RemoteURL)
+		if entry.Token != "" {
+			fmt.Fprintf(&sb, "    headers:\n      Authorization: Bearer %s\n", entry.Token)
+		}
+		return sb.String()
+	}
 	fmt.Fprintf(&sb, "    command: %s\n", entry.Command)
 	sb.WriteString("    env:\n")
 	for _, k := range entry.orderedEnvKeys() {
@@ -247,10 +274,15 @@ func mergeYAMLList(existing []byte, entry mcpEntry) ([]byte, error) {
 			return nil, fmt.Errorf("existing config is not valid YAML: %w", err)
 		}
 	}
-	item := map[string]any{
-		"name":    mcpServerName,
-		"command": entry.Command,
-		"env":     envToAny(entry.Env),
+	item := map[string]any{"name": mcpServerName}
+	if entry.isRemote() {
+		item["url"] = entry.RemoteURL
+		if entry.Token != "" {
+			item["headers"] = map[string]any{"Authorization": "Bearer " + entry.Token}
+		}
+	} else {
+		item["command"] = entry.Command
+		item["env"] = envToAny(entry.Env)
 	}
 	list, _ := root["mcpServers"].([]any)
 	replaced := false

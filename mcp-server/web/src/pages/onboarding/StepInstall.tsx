@@ -14,6 +14,10 @@ export function StepInstall({ onBack, onNext }: StepInstallProps) {
   const [selected, setSelected] = useState<string>('')
   const [scope, setScope] = useState<'global' | 'project'>('global')
   const [mode, setMode] = useState<Mode>('auto')
+  // Connection: local stdio (spawns the binary) vs remote daemon (url + token).
+  const [conn, setConn] = useState<'local' | 'remote'>('local')
+  const [remoteURL, setRemoteURL] = useState('')
+  const [remoteToken, setRemoteToken] = useState('')
   const [installing, setInstalling] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [snippet, setSnippet] = useState<McpSnippetResponse | null>(null)
@@ -30,12 +34,16 @@ export function StepInstall({ onBack, onNext }: StepInstallProps) {
 
   const selectedClient = clients.find((c) => c.id === selected)
 
-  // Load the manual snippet whenever the manual tab is shown or client changes.
+  const remoteOpts = () => conn === 'remote'
+    ? { mode: 'remote', remote_url: remoteURL, token: remoteToken || undefined }
+    : undefined
+
+  // Load the manual snippet whenever the manual tab is shown or inputs change.
   useEffect(() => {
     if (mode === 'manual' && selected && selected !== 'other') {
-      api.mcpSnippet(selected).then(setSnippet).catch(() => setSnippet(null))
+      api.mcpSnippet(selected, remoteOpts()).then(setSnippet).catch(() => setSnippet(null))
     }
-  }, [mode, selected])
+  }, [mode, selected, conn, remoteURL, remoteToken]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const copy = (key: string, text: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -56,10 +64,17 @@ export function StepInstall({ onBack, onNext }: StepInstallProps) {
 
   const runInstall = async () => {
     if (!selected) return
+    if (conn === 'remote' && !remoteURL) {
+      setResult({ ok: false, message: 'Enter the daemon URL (e.g. https://host/mcp) for a remote install.' })
+      return
+    }
     setInstalling(true)
     setResult(null)
     try {
-      const r = await api.installMcp({ client_id: selected, scope })
+      const r = await api.installMcp({
+        client_id: selected, scope,
+        ...(conn === 'remote' ? { mode: 'remote', remote_url: remoteURL, token: remoteToken || undefined } : {}),
+      })
       setResult({
         ok: true,
         message: `Installed into ${r.path}${r.backed_up ? ' (existing config backed up to .bak)' : ''}.`,
@@ -102,6 +117,27 @@ export function StepInstall({ onBack, onNext }: StepInstallProps) {
             <div className="pcard-desc">Manual snippet</div>
           </div>
         </div>
+
+        {/* Connection: local stdio vs remote daemon */}
+        <div className="toolbar" style={{ marginTop: 14 }}>
+          <span className={`toggle ${conn === 'local' ? 'on' : ''}`} onClick={() => setConn('local')}>
+            <span className="switch" /> Local (stdio)
+          </span>
+          <span className={`toggle ${conn === 'remote' ? 'on' : ''}`} onClick={() => setConn('remote')}>
+            <span className="switch" /> Remote daemon
+          </span>
+        </div>
+        {conn === 'remote' && (
+          <div style={{ marginTop: 10 }}>
+            <div className="field-row">
+              <div className="field"><label>Daemon URL</label>
+                <input className="input mono" value={remoteURL} onChange={(e) => setRemoteURL(e.target.value)} placeholder="https://rag.example.com/mcp" /></div>
+              <div className="field"><label>Token (RAG_ADMIN_TOKEN)</label>
+                <input className="input mono" type="password" value={remoteToken} onChange={(e) => setRemoteToken(e.target.value)} placeholder="Bearer token, if set" /></div>
+            </div>
+            <div className="field-hint">Connect to an enowx-rag daemon (`enowx-rag --serve`) over HTTP instead of spawning a local binary.</div>
+          </div>
+        )}
 
         {selected && selected !== 'other' && (
           <>

@@ -341,6 +341,15 @@ original). For a manual snippet instead: GET %s/api/setup/mcp-snippet?client_id=
 
 The MCP server binary is: %s
 
+### Local vs. remote
+- **Local (default)**: the client spawns the binary above over stdio.
+- **Remote daemon**: to connect to an enowx-rag daemon (running elsewhere with
+  ` + "`enowx-rag --serve`" + `), add ` + "`mode: \"remote\"`" + `, ` + "`remote_url`" + ` (e.g.
+  https://rag.example.com/mcp), and ` + "`token`" + ` (its RAG_ADMIN_TOKEN) to the
+  install-mcp body — or ` + "`?mode=remote&remote_url=...&token=...`" + ` on the snippet.
+  This writes a ` + "`{url, headers: {Authorization}}`" + ` entry instead of a local command.
+  See the *Remote / daemon* section.
+
 ## 3. Install the skill (skip if skill.installed is true)
 
 Skills are supported by some clients only (e.g. Claude Code, Factory). Get the
