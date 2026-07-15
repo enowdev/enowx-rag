@@ -66,7 +66,9 @@ func NewRouter(svc *core.Service, ui fs.FS) http.Handler {
 		r.Get("/setup/mcp-snippet", h.SetupMCPSnippet)
 		r.Get("/setup/skill-guide", h.SetupSkillGuide)
 		r.Get("/setup/probe", h.SetupProbe)
-		r.Get("/docs/setup", h.SetupDocs)
+		r.Get("/docs", h.DocsList)
+		r.Get("/docs/setup", h.SetupDocs) // alias for the agent-setup section
+		r.Get("/docs/{section}", h.DocsSection)
 
 		// Unknown /api/ routes return 404 JSON (not SPA fallback)
 		r.NotFound(h.NotFound)

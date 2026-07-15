@@ -268,4 +268,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
     }),
+
+  docsList: () => fetchJSON<{ id: string; title: string }[]>(`${API_BASE}/docs`),
+
+  docsSection: async (id: string): Promise<string> => {
+    const r = await fetch(`${API_BASE}/docs/${encodeURIComponent(id)}`)
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    return r.text()
+  },
 }

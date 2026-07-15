@@ -888,3 +888,55 @@ func TestProbeEndpoint(t *testing.T) {
 		t.Error("mcp status missing cursor")
 	}
 }
+
+// TestDocsEndpoints verifies the docs list, a section, the setup alias, and 404.
+func TestDocsEndpoints(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+
+	// List
+	req := httptest.NewRequest(http.MethodGet, "/api/docs", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("docs list = %d, want 200", w.Code)
+	}
+	var list []map[string]string
+	json.Unmarshal(w.Body.Bytes(), &list)
+	if len(list) < 5 {
+		t.Errorf("expected several doc sections, got %d", len(list))
+	}
+	hasMCP := false
+	for _, s := range list {
+		if s["id"] == "mcp-tools" {
+			hasMCP = true
+		}
+	}
+	if !hasMCP {
+		t.Error("mcp-tools section missing from list")
+	}
+
+	// A section
+	req = httptest.NewRequest(http.MethodGet, "/api/docs/mcp-tools", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "rag_retrieve_context") {
+		t.Errorf("mcp-tools section wrong: %d\n%s", w.Code, w.Body.String())
+	}
+
+	// setup alias still works
+	req = httptest.NewRequest(http.MethodGet, "/api/docs/setup", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "probe") {
+		t.Errorf("docs/setup alias broken: %d", w.Code)
+	}
+
+	// Unknown section -> 404
+	req = httptest.NewRequest(http.MethodGet, "/api/docs/nope", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 404 {
+		t.Errorf("unknown section = %d, want 404", w.Code)
+	}
+}

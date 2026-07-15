@@ -2136,3 +2136,61 @@
   padding: 1px 5px;
   font-size: 12px;
 }
+
+/* ===== Docs multi-section layout ===== */
+.docs-layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 16px;
+  align-items: start;
+  min-height: 0;
+}
+.docs-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 0;
+}
+.docs-nav-item {
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 13px;
+  border: 1px solid transparent;
+  transition: background 0.1s, color 0.1s;
+}
+.docs-nav-item:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.docs-nav-item.active {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+.docs-content-panel {
+  min-width: 0;
+}
+.docs-table-wrap {
+  overflow-x: auto;
+  margin: 10px 0;
+}
+.docs-table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  width: 100%;
+}
+.docs-table th,
+.docs-table td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  color: var(--text-dim);
+}
+.docs-table th {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--surface-2);
+}
