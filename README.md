@@ -6,6 +6,8 @@
 
 Per-project RAG memory MCP server. Each project gets its own vector collection, so an LLM can index context about a codebase and retrieve it quickly.
 
+![enowx-rag dashboard — Overview](docs/screenshots/overview.png)
+
 The server runs in **two modes** from a single binary:
 
 - **MCP stdio mode** (default): `enowx-rag` — talks to AI coding tools over stdio via the Model Context Protocol.
@@ -33,6 +35,48 @@ Point an MCP client at the daemon:
 ```
 
 All MCP tools work identically to local stdio mode. See the **Docs → Remote / daemon** page for details.
+
+---
+
+## Why enowx-rag?
+
+LLM coding agents forget everything between sessions and only see the files you
+paste. enowx-rag gives an agent a **persistent, per-project memory** it can
+search — so it recalls your architecture decisions, gotchas, and conventions
+without you re-explaining them every time.
+
+- **Per-project isolation.** Each project is its own vector collection
+  (`project_<id>`), so an agent working in one repo never retrieves context
+  leaked from another. Index a codebase once; query it in isolation.
+- **Retrieval that actually finds things.** Dense semantic search, optional
+  **hybrid** (dense + lexical RRF), **reranking** (Voyage `rerank-2.5`), and
+  near-duplicate **compression** — tunable per query. See the ranked results,
+  scores, and matched snippets live in the Playground.
+- **Persistent memory, durable metrics.** Design decisions and facts survive
+  across sessions and restarts; query latency (p50/p95), token usage, and
+  retrieval breakdown are persisted to a local SQLite DB (pure-Go, no cgo).
+- **Bring your own stack.** Vector stores: **Qdrant, pgvector, Chroma**.
+  Embedders: **Voyage AI, any OpenAI-compatible `/v1/embeddings` API, or
+  self-hosted TEI**. Swap models or move stores later with the built-in
+  **Migration** tool (re-embeds stored text — no re-scraping your codebase).
+- **One binary, two modes.** Local **MCP stdio** for your editor, or
+  `--serve` for a **remote daemon** (REST API + dashboard + MCP over HTTP),
+  gated by a bearer token — run it centrally on a VPS for a whole team.
+- **No lock-in, no toolchain.** A single self-contained binary with the
+  dashboard embedded. Install via `curl | sh`, Homebrew, npm, `go install`, or
+  a direct download. CGO-free, so it runs anywhere.
+
+### Dashboard preview
+
+The embedded dashboard (`enowx-rag --serve`) — real data from a live instance:
+
+| Overview | Retrieval Playground |
+|---|---|
+| [![Overview](docs/screenshots/overview.png)](docs/screenshots/overview.png) | [![Playground](docs/screenshots/playground.png)](docs/screenshots/playground.png) |
+| **Chunks** | **Migration** |
+| [![Chunks](docs/screenshots/chunks.png)](docs/screenshots/chunks.png) | [![Migration](docs/screenshots/migration.png)](docs/screenshots/migration.png) |
+| **Docs** | **Settings** |
+| [![Docs](docs/screenshots/docs.png)](docs/screenshots/docs.png) | [![Settings](docs/screenshots/settings.png)](docs/screenshots/settings.png) |
 
 ---
 
