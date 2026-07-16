@@ -670,11 +670,11 @@ func TestSetupApply_RemoteRejectedWithoutToken(t *testing.T) {
 // TestSetupApply_RemoteAllowedWithToken verifies that a non-loopback request
 // with a valid admin token is allowed through the gate.
 func TestSetupApply_RemoteAllowedWithToken(t *testing.T) {
-	t.Setenv("RAG_ADMIN_TOKEN", "s3cret")
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
 	p := &mockProvider{}
 	_, router := newTestServer(t, p, nil)
+	// Set token AFTER newTestServer (which clears it for isolation). Auth is
+	// read per-request.
+	t.Setenv("RAG_ADMIN_TOKEN", "s3cret")
 
 	body := `{"vector_store":"qdrant","embedder":"voyage","voyage_api_key":"k"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/apply", strings.NewReader(body))
@@ -695,15 +695,15 @@ func TestSetupApply_RemoteAllowedWithToken(t *testing.T) {
 // TestInstallMCPEndpoint verifies POST /api/setup/install-mcp writes a merged
 // client config (loopback allowed) and reports the path.
 func TestInstallMCPEndpoint(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+	// Set HOME + config AFTER newTestServer (which resets HOME for isolation).
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	// A saved config is required (mcpServerEntry loads it).
 	if err := writeTestConfig(tmp); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-
-	p := &mockProvider{}
-	_, router := newTestServer(t, p, nil)
 
 	body := `{"client_id":"cursor","scope":"global"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/install-mcp", strings.NewReader(body))
@@ -742,13 +742,14 @@ func TestInstallMCPRemoteRejected(t *testing.T) {
 
 // TestMCPSnippetEndpoint verifies GET /api/setup/mcp-snippet returns a snippet.
 func TestMCPSnippetEndpoint(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+	// Set HOME + config AFTER newTestServer (which resets HOME for isolation).
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	if err := writeTestConfig(tmp); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	p := &mockProvider{}
-	_, router := newTestServer(t, p, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/setup/mcp-snippet?client_id=codex", nil)
 	w := httptest.NewRecorder()
@@ -974,6 +975,7 @@ func TestMCPMount_Gated(t *testing.T) {
 // TestMCPMount_OpenWhenNoToken verifies /mcp is reachable without auth when no
 // token is set (local use).
 func TestMCPMount_OpenWhenNoToken(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no config token
 	t.Setenv("RAG_ADMIN_TOKEN", "")
 	dummy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	router := NewRouter(core.NewService(&mockProvider{}, nil, nil), nil, dummy)
@@ -987,13 +989,14 @@ func TestMCPMount_OpenWhenNoToken(t *testing.T) {
 
 // TestSetupConfig_Masked verifies the config endpoint masks secrets.
 func TestSetupConfig_Masked(t *testing.T) {
+	p := &mockProvider{}
+	_, router := newTestServer(t, p, nil)
+	// Set HOME + write config AFTER newTestServer (which resets HOME for isolation).
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	if err := writeTestConfig(tmp); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	p := &mockProvider{}
-	_, router := newTestServer(t, p, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/setup/config", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)

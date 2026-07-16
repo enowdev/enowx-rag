@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,12 @@ import (
 	"github.com/enowdev/enowx-rag/pkg/core"
 	"github.com/enowdev/enowx-rag/pkg/rag"
 )
+
+// realHome is the developer's HOME captured before any test mutates the env.
+// newTestServer uses it to tell whether a test has already isolated HOME (by
+// calling t.Setenv("HOME", ...) itself) so it doesn't clobber a test's own
+// config directory.
+var realHome = os.Getenv("HOME")
 
 // --- Mock Provider for HTTP handler tests ---
 
@@ -118,6 +125,19 @@ var _ core.ProjectLister = (*mockProvider)(nil)
 
 func newTestServer(t *testing.T, provider rag.Provider, ui fs.FS) (*core.Service, http.Handler) {
 	t.Helper()
+	// Isolate config/auth from the host so tests are deterministic regardless of
+	// the developer's ~/.enowx-rag/config.yaml or environment. Auth middleware
+	// reads config.EffectiveAdminToken(), which loads that file; point HOME at an
+	// empty temp dir and clear the admin token env var.
+	//
+	// A test that needs its own config dir may set HOME before this call: if it
+	// already changed HOME (so HOME != realHome) we leave its config dir alone.
+	// The admin token is always cleared here; tests that exercise auth set it
+	// *after* this call, which wins since t.Setenv runs later.
+	if os.Getenv("HOME") == realHome {
+		t.Setenv("HOME", t.TempDir())
+	}
+	t.Setenv("RAG_ADMIN_TOKEN", "")
 	svc := core.NewService(provider, nil, nil)
 	return svc, NewRouter(svc, ui, nil)
 }
@@ -440,6 +460,8 @@ func TestSearch_BadProject(t *testing.T) {
 // when the provider does not implement ProjectLister (falls back to
 // ListPoints returning nil).
 func TestSearch_BadProject_NoLister(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate from host config token
+	t.Setenv("RAG_ADMIN_TOKEN", "")
 	p := &mockProviderNoLister{
 		points: nil, // no points → project doesn't exist
 	}
