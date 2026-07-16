@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -441,8 +442,25 @@ func TestSetupTest_PGVectorSuccess(t *testing.T) {
 	p := &mockProvider{}
 	_, router := newTestServer(t, p, nil)
 
-	// Use the real local PostgreSQL that's running per the mission setup.
-	body := `{"vector_store":"pgvector","embedder":"voyage","voyage_api_key":"test-key","pgvector_dsn":"postgresql://enowdev@localhost:5432/enowxrag"}`
+	// The pgvector connectivity check only dials TCP, so a bare listener on
+	// localhost stands in for a real PostgreSQL — no DB required, works in CI.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+
+	dsn := "postgresql://user@" + ln.Addr().String() + "/db"
+	body := `{"vector_store":"pgvector","embedder":"voyage","voyage_api_key":"test-key","pgvector_dsn":"` + dsn + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/setup/test", strings.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
