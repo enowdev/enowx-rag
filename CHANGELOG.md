@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **One-line install + prebuilt binaries**: releases now ship cross-compiled,
+  CGO-free binaries for macOS/Linux (amd64/arm64) and Windows (amd64) via
+  GoReleaser (`.github/workflows/release.yml` on tag `v*`). Install without a
+  toolchain through the `install.sh` script (`curl -fsSL …/install.sh | sh`),
+  Homebrew (`brew install enowdev/tap/enowx-rag`), npm (`npm install -g
+  enowx-rag`, a thin wrapper that fetches the native binary), `go install
+  …/cmd/mcp-server@latest` (the dashboard is embedded from a committed build),
+  or by downloading a release archive directly. Adds `enowx-rag version`
+  (`--version`), with the version stamped at build time via ldflags.
 - **Settings page** to manage API keys and the admin token from the dashboard:
   view keys masked (`GET /api/setup/config`), reveal full keys
   (`/config/reveal`, localhost or admin token), update a key

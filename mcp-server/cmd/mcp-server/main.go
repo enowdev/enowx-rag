@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
 	"github.com/enowdev/enowx-rag/pkg/config"
@@ -20,6 +21,31 @@ import (
 	"github.com/enowdev/enowx-rag/web"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// version is the build version. It defaults to "dev" for `go run`/source
+// builds and is overridden at release time via the linker:
+//
+//	-ldflags "-X main.version=v0.1.0"
+//
+// GoReleaser sets it from the git tag. `go install ...@vX.Y.Z` also reports a
+// meaningful version through runtime/debug build info (see resolvedVersion).
+var version = "dev"
+
+// resolvedVersion returns the ldflags-injected version when set, otherwise it
+// falls back to the module version recorded in the binary's build info. That
+// fallback makes `go install github.com/enowdev/enowx-rag/...@v0.1.0` report
+// "v0.1.0" even though it doesn't pass our -ldflags.
+func resolvedVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if v := info.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return version
+}
 
 // RuntimeConfig holds the resolved configuration used to build the service
 // layer. It is populated from three sources with strict priority:
@@ -186,6 +212,11 @@ func main() {
 		runSetup(os.Args[2:])
 		return
 	}
+	// `enowx-rag version` / `--version` / `-v` prints the build version.
+	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version" || os.Args[1] == "-v") {
+		fmt.Printf("enowx-rag %s\n", resolvedVersion())
+		return
+	}
 
 	serve := flag.Bool("serve", false, "run HTTP+UI server instead of stdio MCP")
 	addr := flag.String("addr", ":7777", "HTTP listen address (only used with --serve)")
@@ -244,7 +275,7 @@ func main() {
 // shared by both transports: stdio (single session) and the streamable HTTP
 // handler (many concurrent sessions).
 func newMCPServer(svc *core.Service) *mcp.Server {
-	server := mcp.NewServer(&mcp.Implementation{Name: "enowx-rag", Version: "0.1.0"}, &mcp.ServerOptions{
+	server := mcp.NewServer(&mcp.Implementation{Name: "enowx-rag", Version: resolvedVersion()}, &mcp.ServerOptions{
 		Instructions: "Per-project RAG memory: create collections, index project documents, and retrieve/semantic-search context. Connects to Qdrant/Chroma/pgvector with TEI embeddings.",
 	})
 	registerMCPTools(server, svc)

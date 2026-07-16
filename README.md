@@ -36,6 +36,46 @@ All MCP tools work identically to local stdio mode. See the **Docs → Remote / 
 
 ---
 
+## Install
+
+enowx-rag ships as a single self-contained binary (the dashboard is embedded) —
+no runtime dependencies, no toolchain required. Pick whichever fits:
+
+**Install script (macOS/Linux)** — downloads the prebuilt binary for your platform:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/enowdev/enowx-rag/main/install.sh | sh
+```
+
+Pin a version or install location with env vars:
+`ENOWX_VERSION=v0.1.0 ENOWX_INSTALL_DIR=~/.local/bin`.
+
+**Homebrew (macOS/Linux):**
+
+```bash
+brew install enowdev/tap/enowx-rag
+```
+
+**npm** (installs the native binary via a thin wrapper; handy if you already use Node):
+
+```bash
+npm install -g enowx-rag
+```
+
+**Go** (if you have Go 1.26+; builds from source, the dashboard is embedded from a committed build):
+
+```bash
+go install github.com/enowdev/enowx-rag/mcp-server/cmd/mcp-server@latest
+```
+
+**Prebuilt binaries** for macOS/Linux (amd64/arm64) and Windows (amd64) are
+attached to every [GitHub Release](https://github.com/enowdev/enowx-rag/releases).
+
+Verify with `enowx-rag version`, then run `enowx-rag --serve` and open
+`http://localhost:7777`.
+
+---
+
 ## Quick Start (one-command deploy)
 
 ### From source
