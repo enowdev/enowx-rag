@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,28 +18,37 @@ const (
 
 // VoyageEmbeddingClient calls the Voyage AI embeddings API.
 type VoyageEmbeddingClient struct {
-	APIKey string
-	Model  string
-	client *http.Client
+	APIKey  string
+	Model   string
+	Dim     int // 0 = default 1024
+	client  *http.Client
+	baseURL string // override for testing; defaults to voyageAPIURL
+	tokens  atomic.Int64 // cumulative total_tokens reported by the API
 }
 
 // NewVoyageEmbeddingClient creates a Voyage AI embedding client.
 // model defaults to "voyage-4" if empty.
-func NewVoyageEmbeddingClient(apiKey, model string) *VoyageEmbeddingClient {
+// dim sets the output dimension (Matryoshka). 0 defaults to 1024.
+func NewVoyageEmbeddingClient(apiKey, model string, dim int) *VoyageEmbeddingClient {
 	if model == "" {
 		model = "voyage-4"
+	}
+	if dim == 0 {
+		dim = 1024
 	}
 	return &VoyageEmbeddingClient{
 		APIKey: apiKey,
 		Model:  model,
+		Dim:    dim,
 		client: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
 type voyageRequest struct {
-	Input     []string `json:"input"`
-	Model     string   `json:"model"`
-	InputType string   `json:"input_type,omitempty"`
+	Input           []string `json:"input"`
+	Model           string   `json:"model"`
+	InputType       string   `json:"input_type,omitempty"`
+	OutputDimension int      `json:"output_dimension,omitempty"`
 }
 
 type voyageResponse struct {
@@ -46,6 +56,9 @@ type voyageResponse struct {
 		Embedding []float32 `json:"embedding"`
 		Index     int       `json:"index"`
 	} `json:"data"`
+	Usage struct {
+		TotalTokens int64 `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Embed returns one embedding per input text.
@@ -87,12 +100,18 @@ func (c *VoyageEmbeddingClient) embedWithType(ctx context.Context, texts []strin
 
 func (c *VoyageEmbeddingClient) embedBatch(ctx context.Context, texts []string, inputType string) ([][]float32, error) {
 	body, _ := json.Marshal(voyageRequest{
-		Input:     texts,
-		Model:     c.Model,
-		InputType: inputType,
+		Input:           texts,
+		Model:           c.Model,
+		InputType:       inputType,
+		OutputDimension: c.Dim,
 	})
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, voyageAPIURL, bytes.NewReader(body))
+	url := c.baseURL
+	if url == "" {
+		url = voyageAPIURL
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +133,7 @@ func (c *VoyageEmbeddingClient) embedBatch(ctx context.Context, texts []string, 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode voyage response: %w", err)
 	}
+	c.tokens.Add(result.Usage.TotalTokens)
 
 	vecs := make([][]float32, len(texts))
 	for _, d := range result.Data {
@@ -124,7 +144,23 @@ func (c *VoyageEmbeddingClient) embedBatch(ctx context.Context, texts []string, 
 	return vecs, nil
 }
 
-// VectorSize returns 1024 (voyage-4 default dimension).
+// ModelName returns the configured model name. Implements ModelNamer.
+func (c *VoyageEmbeddingClient) ModelName() string {
+	return c.Model
+}
+
+// VectorSize returns the configured dimension, defaulting to 1024 when Dim is 0.
 func (c *VoyageEmbeddingClient) VectorSize() int {
+	if c.Dim > 0 {
+		return c.Dim
+	}
 	return 1024
 }
+
+// TokensUsed returns the cumulative total_tokens reported by the Voyage
+// embeddings API since this client was created. Implements TokenCounter.
+func (c *VoyageEmbeddingClient) TokensUsed() int64 {
+	return c.tokens.Load()
+}
+
+var _ TokenCounter = (*VoyageEmbeddingClient)(nil)

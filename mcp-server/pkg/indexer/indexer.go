@@ -2,6 +2,8 @@ package indexer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"
@@ -49,6 +51,7 @@ var defaultIgnores = map[string]bool{
 
 // IndexProject scans the directory and indexes all code/text files.
 // It handles insertions (new/changed files), and deletions (files removed since last index).
+// Chunks whose content_hash matches an existing point are skipped (no re-embedding).
 func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string) (*SyncResult, error) {
 	rootDir, err := filepath.Abs(rootDir)
 	if err != nil {
@@ -62,9 +65,28 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 	// directory's file list.
 	sourceDir := filepath.Base(rootDir)
 
+	// Fetch existing points for this source_dir so we can compare content hashes
+	// and skip re-embedding unchanged chunks.
+	existingPoints, err := idx.provider.ListPoints(ctx, projectID, map[string]string{"source_dir": sourceDir})
+	if err != nil {
+		// If we can't list existing points, proceed without skip optimization
+		existingPoints = nil
+	}
+	existingHashes := make(map[string]string) // docID -> content_hash
+	for _, pt := range existingPoints {
+		key := pt.DocID
+		if key == "" {
+			key = pt.ID
+		}
+		if pt.ContentHash != "" {
+			existingHashes[key] = pt.ContentHash
+		}
+	}
+
 	// Walk the directory and collect files.
 	var docs []rag.Document
 	var currentFiles []string
+	skipped := 0
 
 	err = filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -101,13 +123,21 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 		chunks := chunkText(string(content), idx.chunkSize)
 		for i, chunk := range chunks {
 			docID := fmt.Sprintf("%s/%s#chunk%d", sourceDir, relPath, i)
+			contentHash := computeContentHash(chunk)
+			// Skip re-embedding if the content_hash matches an existing point
+			if existingHash, ok := existingHashes[docID]; ok && existingHash == contentHash {
+				skipped++
+				continue
+			}
 			docs = append(docs, rag.Document{
 				ID:      docID,
 				Content: fmt.Sprintf("File: %s\n\n%s", relPath, chunk),
 				Meta: map[string]string{
-					"source_file": relPath,
-					"source_dir":  sourceDir,
-					"chunk_index": fmt.Sprintf("%d", i),
+					"source_file":   relPath,
+					"source_dir":    sourceDir,
+					"chunk_index":   fmt.Sprintf("%d", i),
+					"content_hash":  contentHash,
+					"chunk_version": "v2",
 				},
 			})
 		}
@@ -135,18 +165,19 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 	// Find and delete stale points (files that no longer exist in THIS directory).
 	staleIDs, err := idx.findStalePoints(ctx, projectID, sourceDir, currentFiles)
 	if err != nil {
-		return &SyncResult{Indexed: len(docs), Deleted: 0, StaleError: err.Error()}, nil
+		return &SyncResult{Indexed: len(docs), Deleted: 0, Skipped: skipped, StaleError: err.Error()}, nil
 	}
 	if len(staleIDs) > 0 {
 		if err := idx.provider.DeletePoints(ctx, projectID, staleIDs); err != nil {
-			return &SyncResult{Indexed: len(docs), Deleted: 0, StaleError: err.Error()}, nil
+			return &SyncResult{Indexed: len(docs), Deleted: 0, Skipped: skipped, StaleError: err.Error()}, nil
 		}
 	}
 
 	return &SyncResult{
-		Indexed:       len(docs),
-		Deleted:       len(staleIDs),
-		FilesScanned:  len(currentFiles),
+		Indexed:      len(docs),
+		Deleted:      len(staleIDs),
+		FilesScanned: len(currentFiles),
+		Skipped:      skipped,
 	}, nil
 }
 
@@ -155,6 +186,7 @@ type SyncResult struct {
 	Indexed      int    `json:"indexed"`
 	Deleted      int    `json:"deleted"`
 	FilesScanned int    `json:"files_scanned"`
+	Skipped      int    `json:"skipped"`
 	StaleError   string `json:"stale_error,omitempty"`
 }
 
@@ -219,6 +251,14 @@ func chunkText(text string, maxChars int) []string {
 	}
 	flush()
 	return chunks
+}
+
+// computeContentHash returns the first 8 bytes of SHA-256 of the given content
+// as a 16-character lowercase hex string. This is used for incremental sync:
+// chunks whose hash matches an existing point are skipped (no re-embedding).
+func computeContentHash(content string) string {
+	h := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(h[:8])
 }
 
 // isIndexable returns true for code and text files.

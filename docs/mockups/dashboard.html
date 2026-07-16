@@ -1,0 +1,607 @@
+<title>enowx-rag — Dashboard Mockup</title>
+<style>
+  /* ---- Fonts: system stack tuned; mono is real JetBrains-like via system fallback ---- */
+  :root {
+    --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
+
+    /* Light theme (default) */
+    --bg: #ffffff;
+    --surface: #fafafa;
+    --surface-2: #f4f4f5;
+    --border: #e4e4e7;
+    --border-strong: #d4d4d8;
+    --text: #09090b;
+    --text-dim: #52525b;
+    --text-faint: #a1a1aa;
+    --accent: #6d4aff;
+    --accent-fg: #ffffff;
+    --good: #1a7f37;
+    --good-bg: rgba(26,127,55,0.10);
+    --warn: #9a6700;
+    --crit: #cf222e;
+    --score-track: #e4e4e7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000;
+      --surface: #0a0a0a;
+      --surface-2: #101012;
+      --border: #1e1e21;
+      --border-strong: #2a2a2e;
+      --text: #fafafa;
+      --text-dim: #a1a1aa;
+      --text-faint: #6b6b73;
+      --accent: #7c5cff;
+      --accent-fg: #ffffff;
+      --good: #3fb950;
+      --good-bg: rgba(63,185,80,0.12);
+      --warn: #d29922;
+      --crit: #f85149;
+      --score-track: #1e1e21;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg:#ffffff; --surface:#fafafa; --surface-2:#f4f4f5; --border:#e4e4e7; --border-strong:#d4d4d8;
+    --text:#09090b; --text-dim:#52525b; --text-faint:#a1a1aa; --accent:#6d4aff; --accent-fg:#fff;
+    --good:#1a7f37; --good-bg:rgba(26,127,55,0.10); --warn:#9a6700; --crit:#cf222e; --score-track:#e4e4e7;
+  }
+  :root[data-theme="dark"] {
+    --bg:#000000; --surface:#0a0a0a; --surface-2:#101012; --border:#1e1e21; --border-strong:#2a2a2e;
+    --text:#fafafa; --text-dim:#a1a1aa; --text-faint:#6b6b73; --accent:#7c5cff; --accent-fg:#fff;
+    --good:#3fb950; --good-bg:rgba(63,185,80,0.12); --warn:#d29922; --crit:#f85149; --score-track:#1e1e21;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: var(--font-mono); font-feature-settings: "liga" 0; }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  /* ---- App shell ---- */
+  .app { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; align-items: start; }
+
+  /* ---- Sidebar ---- */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 16px 12px;
+    gap: 4px;
+    position: sticky; top: 0;
+    height: 100vh;
+    overflow: hidden;
+  }
+  /* Only the project list scrolls if it overflows; brand + nav + footer stay fixed. */
+  .proj-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; }
+  .proj-list::-webkit-scrollbar { width: 8px; }
+  .proj-list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 8px; }
+  .brand {
+    display: flex; align-items: center; gap: 9px;
+    padding: 4px 8px 14px 8px;
+  }
+  .brand-mark {
+    width: 22px; height: 22px; border: 1px solid var(--border-strong);
+    display: grid; place-items: center; border-radius: 5px;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--accent);
+  }
+  .brand-name { font-weight: 600; letter-spacing: -0.01em; font-size: 14px; }
+  .brand-name span { color: var(--text-faint); font-weight: 500; }
+
+  .nav-label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-faint); padding: 14px 8px 6px; font-weight: 600;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 8px; border-radius: 6px; cursor: pointer;
+    color: var(--text-dim); font-size: 13.5px; border: 1px solid transparent;
+  }
+  .nav-item:hover { background: var(--surface-2); color: var(--text); }
+  .nav-item.active { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+  .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; margin-left: auto; }
+  .nav-item svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; flex: none; }
+
+  .proj {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px; cursor: pointer; color: var(--text-dim);
+    font-size: 13px;
+  }
+  .proj:hover { background: var(--surface-2); color: var(--text); }
+  .proj.active { color: var(--text); background: var(--surface-2); }
+  .proj-name.mono { font-size: 12.5px; }
+  .proj .count { margin-left: auto; color: var(--text-faint); font-size: 11.5px; }
+
+  .sidebar-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+
+  /* ---- Main ---- */
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .topbar {
+    height: 52px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px; padding: 0 22px;
+    position: sticky; top: 0; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: saturate(1.2); z-index: 5;
+  }
+  .crumb { color: var(--text-faint); font-size: 13px; }
+  .crumb b { color: var(--text); font-weight: 600; }
+  .crumb .sep { margin: 0 8px; color: var(--text-faint); }
+  .search {
+    margin-left: auto; display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
+    padding: 6px 10px; color: var(--text-faint); width: 260px; cursor: text; font-size: 13px;
+  }
+  .search svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .kbd {
+    margin-left: auto; font-family: var(--font-mono); font-size: 11px;
+    border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--text-faint);
+  }
+  .icon-btn {
+    width: 32px; height: 32px; display: grid; place-items: center;
+    border: 1px solid var(--border); border-radius: 7px; background: var(--surface);
+    color: var(--text-dim); cursor: pointer;
+  }
+  .icon-btn:hover { color: var(--text); border-color: var(--border-strong); }
+  .icon-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+
+  .content { padding: 22px; display: flex; flex-direction: column; gap: 18px; width: 100%; }
+
+  .page-head { display: flex; align-items: flex-end; gap: 12px; }
+  .page-head h1 { margin: 0; font-size: 20px; letter-spacing: -0.02em; font-weight: 650; }
+  .page-head .id { color: var(--text-faint); font-size: 12.5px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 7px; padding: 7px 12px;
+    background: var(--surface); color: var(--text); font-size: 13px; font-weight: 500;
+    font-family: var(--font-ui);
+  }
+  .btn:hover { border-color: var(--border-strong); background: var(--surface-2); }
+  .btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .head-actions { margin-left: auto; display: flex; gap: 8px; }
+
+  /* ---- KPI row ---- */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .kpi { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); padding: 14px 15px; }
+  .kpi .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-faint); font-weight: 600; display: flex; align-items: center; gap: 6px;
+  }
+  .kpi .val { font-size: 25px; font-weight: 640; letter-spacing: -0.02em; margin-top: 8px; }
+  .kpi .val small { font-size: 13px; color: var(--text-faint); font-weight: 500; }
+  .kpi .sub { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+  .spark { margin-top: 10px; display: block; width: 100%; height: 30px; }
+
+  /* ---- Grid of two panels ---- */
+  /* Bento grid: every panel is a cell; rows keep heights aligned so no column dangles. */
+  .cols {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: minmax(0, auto);
+    gap: 14px;
+    align-items: stretch;
+  }
+  .cols > .panel { margin: 0; }
+  /* playground spans 2 cols and the full height of the right stack beside it */
+  .g-play { grid-column: span 2; grid-row: span 2; }
+  .g-status { grid-column: 3; }
+  .g-breakdown { grid-column: 3; }
+  .g-dist { grid-column: span 2; }
+  .g-files { grid-column: 3; grid-row: span 2; }
+  .g-activity { grid-column: span 2; }
+  .panel { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; display: flex; flex-direction: column; }
+  .panel .panel-body { flex: 1; }
+  .panel-head {
+    display: flex; align-items: center; gap: 10px; padding: 12px 15px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-head h2 { margin: 0; font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .panel-head .hint { color: var(--text-faint); font-size: 11.5px; margin-left: auto; }
+  .panel-body { padding: 15px; }
+
+  /* ---- Retrieval playground ---- */
+  .query-row { display: flex; gap: 9px; }
+  .query-input {
+    flex: 1; display: flex; align-items: center; gap: 9px;
+    border: 1px solid var(--border-strong); border-radius: 8px; padding: 9px 12px;
+    background: var(--bg); color: var(--text);
+  }
+  .query-input svg { width: 15px; height: 15px; stroke: var(--text-faint); fill: none; stroke-width: 1.7; }
+  .query-input .txt { font-family: var(--font-mono); font-size: 13px; }
+  .query-input .caret { width: 1.5px; height: 15px; background: var(--accent); animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .toolbar { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: 20px; padding: 4px 10px 4px 8px; cursor: pointer;
+  }
+  .toggle.on { color: var(--text); border-color: var(--accent); }
+  .switch { width: 26px; height: 15px; border-radius: 20px; background: var(--border-strong); position: relative; flex:none; }
+  .toggle.on .switch { background: var(--accent); }
+  .switch::after { content:""; position:absolute; width:11px; height:11px; border-radius:50%; background:#fff; top:2px; left:2px; transition:.15s; }
+  .toggle.on .switch::after { left: 13px; }
+  .chip {
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px;
+  }
+  .chip b { color: var(--text); font-weight: 600; }
+
+  .results { margin-top: 16px; display: flex; flex-direction: column; gap: 9px; }
+  .res {
+    border: 1px solid var(--border); border-radius: 8px; padding: 11px 12px; background: var(--bg);
+    display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start;
+  }
+  .res:hover { border-color: var(--border-strong); }
+  .score {
+    display: flex; flex-direction: column; align-items: center; gap: 5px; width: 46px; padding-top: 2px;
+  }
+  .score .num { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+  .score .bar { width: 100%; height: 3px; border-radius: 3px; background: var(--score-track); overflow: hidden; }
+  .score .bar i { display: block; height: 100%; border-radius: 3px; }
+  .res-main { min-width: 0; }
+  .res-file {
+    font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+    display: flex; align-items: center; gap: 7px; margin-bottom: 5px;
+  }
+  .res-file .path b { color: var(--text); font-weight: 600; }
+  .tag {
+    font-family: var(--font-mono); font-size: 10px; text-transform: none;
+    border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--text-faint);
+  }
+  .res-snippet {
+    font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .res-snippet mark { background: var(--good-bg); color: var(--good); padding: 0 2px; border-radius: 3px; }
+
+  /* ---- right column: index status + tokens ---- */
+  .stat-line { display: flex; align-items: baseline; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .stat-line:last-child { border-bottom: none; }
+  .stat-line .k { color: var(--text-dim); font-size: 12.5px; }
+  .stat-line .v { font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; }
+
+  .token-meter { margin-top: 4px; }
+  .meter-track { height: 8px; border-radius: 6px; background: var(--score-track); overflow: hidden; border: 1px solid var(--border); }
+  .meter-track i { display: block; height: 100%; background: var(--accent); border-radius: 6px; }
+  .meter-cap { display: flex; justify-content: space-between; margin-top: 7px; font-size: 11.5px; color: var(--text-faint); }
+  .meter-cap .mono { color: var(--text-dim); }
+
+  .files { margin-top: 4px; display: flex; flex-direction: column; }
+  .file-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .file-row:last-child { border-bottom: none; }
+  .file-row .fname { font-family: var(--font-mono); font-size: 12px; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-row .fmeta { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); flex: none; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+
+  .log { margin-top: 2px; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); display:flex; flex-direction:column; gap:7px; }
+  .log .row { display: flex; gap: 8px; }
+  .log .t { color: var(--text-faint); }
+  .log .ok { color: var(--good); }
+
+  /* ---- chunk distribution (mini horizontal bars) ---- */
+  .dist { display: flex; flex-direction: column; gap: 9px; margin-top: 2px; }
+  .dist-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .dist-row .dname { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dist-row .dcount { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+  .dist-bar { grid-column: 1 / -1; height: 5px; border-radius: 4px; background: var(--score-track); overflow: hidden; }
+  .dist-bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+
+  /* ---- retrieval breakdown (stacked composition bar) ---- */
+  .compo { display: flex; height: 9px; border-radius: 5px; overflow: hidden; border: 1px solid var(--border); margin: 4px 0 12px; }
+  .compo i { height: 100%; }
+  .compo-legend { display: flex; flex-direction: column; gap: 7px; }
+  .compo-legend .lrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); }
+  .compo-legend .sw { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+  .compo-legend .lval { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--text); }
+
+  .note { color: var(--text-faint); font-size: 11.5px; padding: 0 22px 26px; }
+  .note code { font-family: var(--font-mono); color: var(--text-dim); }
+
+  @media (max-width: 1100px) {
+    .cols { grid-template-columns: 1fr 1fr; }
+    .g-play { grid-column: span 2; grid-row: auto; }
+    .g-status, .g-breakdown { grid-column: auto; }
+    .g-dist { grid-column: span 2; }
+    .g-files { grid-column: auto; grid-row: auto; }
+    .g-activity { grid-column: span 2; }
+    .dist[style], .log[style] { grid-template-columns: 1fr !important; }
+  }
+  @media (max-width: 1000px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .kpis { grid-template-columns: repeat(2,1fr); }
+    .cols { grid-template-columns: 1fr; }
+    .g-play, .g-dist, .g-activity { grid-column: auto; }
+  }
+</style>
+
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark mono">e</div>
+      <div class="brand-name">enowx<span>·rag</span></div>
+    </div>
+
+    <div class="nav-item active">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Overview
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      Playground
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      Chunks
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/></svg>
+      Setup
+    </div>
+
+    <div class="nav-label">Projects</div>
+    <div class="proj-list">
+      <div class="proj active"><span class="status-dot" style="background:var(--good)"></span><span class="proj-name mono">enowx-rag</span><span class="count tnum">76</span></div>
+      <div class="proj"><span class="status-dot" style="background:var(--good)"></span><span class="proj-name mono">robloxkit</span><span class="count tnum">2,140</span></div>
+      <div class="proj"><span class="status-dot" style="background:var(--good)"></span><span class="proj-name mono">enowxreality</span><span class="count tnum">1,883</span></div>
+      <div class="proj"><span class="status-dot" style="background:var(--warn)"></span><span class="proj-name mono">reality-client-rs</span><span class="count tnum">642</span></div>
+      <div class="proj"><span class="status-dot" style="background:var(--good)"></span><span class="proj-name mono">antaresban</span><span class="count tnum">508</span></div>
+      <div class="proj"><span class="status-dot" style="background:var(--good)"></span><span class="proj-name mono">pixelify</span><span class="count tnum">431</span></div>
+      <div class="proj"><span class="status-dot" style="background:var(--good)"></span><span class="proj-name mono">enowxai</span><span class="count tnum">377</span></div>
+      <div class="proj"><span class="status-dot" style="background:var(--good)"></span><span class="proj-name mono">enowx-discord</span><span class="count tnum">294</span></div>
+      <div class="proj"><span class="status-dot" style="background:var(--good)"></span><span class="proj-name mono">reality-auto-login</span><span class="count tnum">210</span></div>
+    </div>
+
+    <div class="sidebar-foot">
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg>
+        Settings
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div class="crumb"><span>Projects</span><span class="sep">/</span><b class="mono">enowx-rag</b></div>
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        Search projects &amp; chunks…
+        <span class="kbd">⌘K</span>
+      </div>
+      <div class="icon-btn" id="themeBtn" title="Toggle theme">
+        <svg id="themeIcon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z"/></svg>
+      </div>
+    </div>
+
+    <div class="content">
+      <!-- page head -->
+      <div class="page-head">
+        <h1>Overview</h1>
+        <span class="id mono">project_enowx-rag</span>
+        <div class="head-actions">
+          <button class="btn"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Re-index</button>
+          <button class="btn primary"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>New query</button>
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div class="kpis">
+        <div class="kpi">
+          <div class="label">Chunks</div>
+          <div class="val tnum">76</div>
+          <div class="sub">across 17 files</div>
+        </div>
+        <div class="kpi">
+          <div class="label">Embedding</div>
+          <div class="val mono" style="font-size:18px; margin-top:11px;">voyage-4</div>
+          <div class="sub mono">1024-dim · cosine</div>
+        </div>
+        <div class="kpi">
+          <div class="label">Avg. query latency</div>
+          <div class="val tnum">213<small> ms</small></div>
+          <svg class="spark" viewBox="0 0 120 30" preserveAspectRatio="none">
+            <polyline fill="none" stroke="var(--accent)" stroke-width="1.5"
+              points="0,22 12,18 24,20 36,12 48,15 60,9 72,14 84,7 96,11 108,6 120,10"/>
+            <circle cx="120" cy="10" r="2.2" fill="var(--accent)"/>
+          </svg>
+        </div>
+        <div class="kpi">
+          <div class="label">Tokens used</div>
+          <div class="val tnum">53.9<small> M</small></div>
+          <div class="token-meter">
+            <div class="meter-track"><i style="width:27%"></i></div>
+            <div class="meter-cap"><span>26.96%</span><span class="mono">200M free</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- bento grid -->
+      <div class="cols">
+        <!-- retrieval playground: 2 cols wide, 2 rows tall -->
+        <section class="panel g-play">
+          <div class="panel-head">
+            <h2>Retrieval playground</h2>
+            <span class="hint">top-4 · reranked</span>
+          </div>
+          <div class="panel-body">
+            <div class="query-row">
+              <div class="query-input">
+                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <span class="txt">how does pgvector handle stale chunks</span><span class="caret"></span>
+              </div>
+              <button class="btn primary" style="padding:9px 14px;">Run</button>
+            </div>
+
+            <div class="toolbar">
+              <span class="toggle on"><span class="switch"></span>Hybrid</span>
+              <span class="toggle on"><span class="switch"></span>Rerank</span>
+              <span class="toggle"><span class="switch"></span>Compress</span>
+              <span class="chip">k = <b>4</b></span>
+              <span class="chip">recall <b>40</b></span>
+            </div>
+
+            <div class="results">
+              <div class="res">
+                <div class="score">
+                  <span class="num" style="color:var(--good)">0.912</span>
+                  <span class="bar"><i style="width:91%; background:var(--good)"></i></span>
+                </div>
+                <div class="res-main">
+                  <div class="res-file"><span class="path mono"><b>indexer.go</b> · findStalePoints()</span><span class="tag">type:architecture</span></div>
+                  <div class="res-snippet">// List only points belonging to this source_dir so that
+// indexing a different directory into the same project
+// doesn't wipe the first. Reconcile against <mark>currentSet</mark>.</div>
+                </div>
+              </div>
+
+              <div class="res">
+                <div class="score">
+                  <span class="num" style="color:var(--good)">0.874</span>
+                  <span class="bar"><i style="width:87%; background:var(--good)"></i></span>
+                </div>
+                <div class="res-main">
+                  <div class="res-file"><span class="path mono"><b>pgvector.go</b> · DeletePoints()</span><span class="tag">type:snippet</span></div>
+                  <div class="res-snippet">DELETE FROM project_memory
+WHERE project_id = $1 AND id = ANY($2)
+// <mark>stale</mark> ids resolved from ListPoints() by source_dir</div>
+                </div>
+              </div>
+
+              <div class="res">
+                <div class="score">
+                  <span class="num" style="color:var(--warn)">0.661</span>
+                  <span class="bar"><i style="width:66%; background:var(--warn)"></i></span>
+                </div>
+                <div class="res-main">
+                  <div class="res-file"><span class="path mono"><b>pgvector.go</b> · ListPoints()</span><span class="tag">type:snippet</span></div>
+                  <div class="res-snippet">SELECT id, metadata->>'source_file' FROM project_memory
+WHERE project_id = $1 AND metadata->>'source_dir' = $2</div>
+                </div>
+              </div>
+
+              <div class="res">
+                <div class="score">
+                  <span class="num" style="color:var(--text-faint)">0.402</span>
+                  <span class="bar"><i style="width:40%; background:var(--border-strong)"></i></span>
+                </div>
+                <div class="res-main">
+                  <div class="res-file"><span class="path mono"><b>provider.go</b> · Provider iface</span><span class="tag">type:api</span></div>
+                  <div class="res-snippet">// DeletePoints removes specific points by ID from the
+// project collection.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- index status: col 3, row 1 -->
+        <section class="panel g-status">
+          <div class="panel-head">
+            <h2>Index status</h2>
+            <span class="hint mono" style="color:var(--good)">● synced</span>
+          </div>
+          <div class="panel-body" style="padding:12px 15px;">
+            <div class="stat-line"><span class="k">Files scanned</span><span class="v tnum">17</span></div>
+            <div class="stat-line"><span class="k">Chunks indexed</span><span class="v tnum">76</span></div>
+            <div class="stat-line"><span class="k">Points deleted</span><span class="v tnum">0</span></div>
+            <div class="stat-line"><span class="k">Chunk version</span><span class="v">v2 · 1500c</span></div>
+            <div class="stat-line"><span class="k">Last sync</span><span class="v">just now</span></div>
+          </div>
+        </section>
+
+        <!-- retrieval breakdown: col 3, row 2 -->
+        <section class="panel g-breakdown">
+          <div class="panel-head"><h2>Retrieval breakdown</h2><span class="hint mono">this query</span></div>
+          <div class="panel-body" style="padding:13px 15px;">
+            <div class="compo">
+              <i style="width:58%; background:var(--accent)"></i>
+              <i style="width:42%; background:var(--good)"></i>
+            </div>
+            <div class="compo-legend">
+              <div class="lrow"><span class="sw" style="background:var(--accent)"></span>Dense (vector)<span class="lval">58%</span></div>
+              <div class="lrow"><span class="sw" style="background:var(--good)"></span>Lexical (tsvector)<span class="lval">42%</span></div>
+              <div class="lrow"><span class="sw" style="background:var(--border-strong)"></span>Reranker moved<span class="lval">2 ↑</span></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- chunk distribution: span 2 cols -->
+        <section class="panel g-dist">
+          <div class="panel-head"><h2>Chunk distribution</h2><span class="hint">chunks per file</span></div>
+          <div class="panel-body" style="padding:14px 15px;">
+            <div class="dist" style="display:grid; grid-template-columns:1fr 1fr; gap:9px 24px;">
+              <div class="dist-row"><span class="dname">README.md</span><span class="dcount">12</span><span class="dist-bar"><i style="width:100%"></i></span></div>
+              <div class="dist-row"><span class="dname">pkg/rag/qdrant.go</span><span class="dcount">7</span><span class="dist-bar"><i style="width:58%"></i></span></div>
+              <div class="dist-row"><span class="dname">cmd/mcp-server/main.go</span><span class="dcount">9</span><span class="dist-bar"><i style="width:75%"></i></span></div>
+              <div class="dist-row"><span class="dname">pkg/indexer/indexer.go</span><span class="dcount">6</span><span class="dist-bar"><i style="width:50%"></i></span></div>
+              <div class="dist-row"><span class="dname">pkg/rag/pgvector.go</span><span class="dcount">8</span><span class="dist-bar"><i style="width:67%"></i></span></div>
+              <div class="dist-row"><span class="dname">pkg/rag/chroma.go</span><span class="dcount">5</span><span class="dist-bar"><i style="width:42%"></i></span></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- recent files: col 3, span 2 rows (aligns with dist + activity) -->
+        <section class="panel g-files">
+          <div class="panel-head"><h2>Recent files</h2></div>
+          <div class="panel-body" style="padding:6px 15px 12px;">
+            <div class="files">
+              <div class="file-row"><span class="status-dot" style="background:var(--good)"></span><span class="fname">pkg/rag/pgvector.go</span><span class="fmeta">8 ch</span></div>
+              <div class="file-row"><span class="status-dot" style="background:var(--good)"></span><span class="fname">pkg/indexer/indexer.go</span><span class="fmeta">6 ch</span></div>
+              <div class="file-row"><span class="status-dot" style="background:var(--good)"></span><span class="fname">cmd/mcp-server/main.go</span><span class="fmeta">9 ch</span></div>
+              <div class="file-row"><span class="status-dot" style="background:var(--good)"></span><span class="fname">pkg/rag/voyage.go</span><span class="fmeta">4 ch</span></div>
+              <div class="file-row"><span class="status-dot" style="background:var(--good)"></span><span class="fname">pkg/rag/tei.go</span><span class="fmeta">3 ch</span></div>
+              <div class="file-row"><span class="status-dot" style="background:var(--warn)"></span><span class="fname">README.md</span><span class="fmeta">12 ch</span></div>
+              <div class="file-row"><span class="status-dot" style="background:var(--good)"></span><span class="fname">skill/enowx-rag.md</span><span class="fmeta">7 ch</span></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- activity: span 2 cols -->
+        <section class="panel g-activity">
+          <div class="panel-head"><h2>Activity</h2><span class="hint">live</span></div>
+          <div class="panel-body" style="padding:12px 15px;">
+            <div class="log" style="display:grid; grid-template-columns:1fr 1fr; gap:7px 24px;">
+              <div class="row"><span class="t">12:19:41</span><span class="ok">✓ synced</span><span>76 chunks · 0 deleted</span></div>
+              <div class="row"><span class="t">12:14:02</span><span class="ok">✓ query</span><span>latency 213ms · k=4</span></div>
+              <div class="row"><span class="t">12:19:38</span><span>embed</span><span>17 files → voyage-4</span></div>
+              <div class="row"><span class="t">12:13:55</span><span>rerank</span><span>40 → 4 · rerank-2.5</span></div>
+              <div class="row"><span class="t">12:19:37</span><span>scan</span><span>/Project/enowx-rag</span></div>
+              <div class="row"><span class="t">12:09:20</span><span class="ok">✓ query</span><span>latency 198ms · k=4</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <p class="note">
+      Mockup — gaya <b>true-black flat</b>: dark <code>#000000</code>, zero gradient, kedalaman lewat <code>1px</code> border &amp; beda surface.
+      Aksen tunggal violet hanya untuk aksi &amp; endpoint; warna semantik (skor) terpisah. Data teknis pakai mono. Coba tombol tema di kanan atas.
+    </p>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeBtn');
+    var root = document.documentElement;
+    function current() {
+      var t = root.getAttribute('data-theme');
+      if (t) return t;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    btn.addEventListener('click', function () {
+      var next = current() === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+    });
+  })();
+</script>

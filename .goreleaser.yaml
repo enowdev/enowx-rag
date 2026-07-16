@@ -1,0 +1,101 @@
+# GoReleaser config for enowx-rag.
+# Docs: https://goreleaser.com
+#
+# The Go module lives in ./mcp-server (its go.mod is there), and the web
+# dashboard is embedded from mcp-server/web/dist (committed to the repo), so no
+# npm build is needed here — GoReleaser just cross-compiles the CGO-free binary.
+#
+# Release:  git tag v0.1.0 && git push origin v0.1.0
+# The .github/workflows/release.yml workflow runs `goreleaser release` on tags.
+version: 2
+
+project_name: enowx-rag
+
+before:
+  hooks:
+    # Ensure modules are tidy/available before the build.
+    - go -C mcp-server mod download
+
+builds:
+  - id: enowx-rag
+    binary: enowx-rag
+    dir: mcp-server
+    main: ./cmd/mcp-server
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # Windows on ARM64 is uncommon for a server daemon; skip it.
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    ids:
+      - enowx-rag
+    # v0.1.0_darwin_arm64.tar.gz etc. install.sh depends on this name format.
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev"
+
+changelog:
+  # We maintain CHANGELOG.md by hand; keep the release notes from the tag/body.
+  disable: true
+
+release:
+  github:
+    owner: enowdev
+    name: enowx-rag
+  # Draft the release so you can review binaries before publishing.
+  draft: false
+  prerelease: auto
+  name_template: "{{ .Tag }}"
+
+# --- Homebrew tap -----------------------------------------------------------
+# Requires a repo github.com/enowdev/homebrew-tap and a token in the
+# HOMEBREW_TAP_GITHUB_TOKEN secret (a PAT with `repo` scope, or a fine-grained
+# token with contents:write on homebrew-tap). Then: brew install enowdev/tap/enowx-rag
+brews:
+  - name: enowx-rag
+    ids:
+      - default
+    repository:
+      owner: enowdev
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/enowdev/enowx-rag"
+    description: "Per-project RAG memory MCP server for AI coding agents"
+    license: "Apache-2.0"
+    commit_author:
+      name: goreleaser-bot
+      email: goreleaser@enowx-rag.local
+    directory: Formula
+    test: |
+      system "#{bin}/enowx-rag", "version"
+    install: |
+      bin.install "enowx-rag"

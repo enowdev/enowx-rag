@@ -12,6 +12,12 @@ import (
 
 // ChromaProvider implements a lightweight REST Chroma provider with no generated client.
 // It assumes the embedding is done via an external TEI/OpenAI client.
+//
+// EXPERIMENTAL: this provider targets Chroma's legacy /api/v1 REST API and is
+// only covered by mock-based tests, not verified against a live server. Chroma
+// >= 0.6 moved to /api/v2 (tenant/database path segments, UUID-addressed
+// collections), so these calls may fail against modern Chroma. Prefer Qdrant or
+// pgvector for a supported setup. Porting to /api/v2 is tracked as future work.
 type ChromaProvider struct {
 	baseURL  string
 	embedder EmbeddingClient
@@ -50,6 +56,13 @@ func (p *ChromaProvider) Index(ctx context.Context, projectID string, docs []Doc
 	}
 	name := p.collectionName(projectID)
 
+	// Determine embed_model and embed_dim for metadata injection.
+	embedModel := "unknown"
+	if mn, ok := p.embedder.(ModelNamer); ok {
+		embedModel = mn.ModelName()
+	}
+	embedDim := p.embedder.VectorSize()
+
 	texts := make([]string, len(docs))
 	ids := make([]string, len(docs))
 	metas := make([]map[string]any, len(docs))
@@ -59,7 +72,7 @@ func (p *ChromaProvider) Index(ctx context.Context, projectID string, docs []Doc
 		if ids[i] == "" {
 			ids[i] = strings.ReplaceAll(fmt.Sprintf("%x", d.Content), "/", "_") // fallback deterministic
 		}
-		metas[i] = map[string]any{"content": d.Content}
+		metas[i] = map[string]any{"content": d.Content, "embed_model": embedModel, "embed_dim": embedDim}
 		for k, v := range d.Meta {
 			metas[i][k] = v
 		}
@@ -95,12 +108,22 @@ func (p *ChromaProvider) SemanticSearch(ctx context.Context, projectID, query st
 	if limit <= 0 {
 		limit = 5
 	}
-	vectors, err := p.embedder.Embed(ctx, []string{query})
-	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+	var queryVec []float32
+	if qe, ok := p.embedder.(QueryEmbedder); ok {
+		v, err := qe.EmbedQuery(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		queryVec = v
+	} else {
+		vectors, err := p.embedder.Embed(ctx, []string{query})
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		queryVec = vectors[0]
 	}
-	embedding := make([]float64, len(vectors[0]))
-	for i, v := range vectors[0] {
+	embedding := make([]float64, len(queryVec))
+	for i, v := range queryVec {
 		embedding[i] = float64(v)
 	}
 
@@ -182,7 +205,7 @@ func (p *ChromaProvider) ListPointIDs(ctx context.Context, projectID string, met
 
 func (p *ChromaProvider) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error) {
 	body := map[string]any{
-		"include": []string{"metadatas"},
+		"include": []string{"metadatas", "documents"},
 	}
 	if len(metaFilter) > 0 {
 		where := map[string]any{}
@@ -203,6 +226,23 @@ func (p *ChromaProvider) ListPoints(ctx context.Context, projectID string, metaF
 				if sf, ok := resp.Metadatas[bi][pi]["source_file"].(string); ok {
 					info.SourceFile = sf
 				}
+				if ch, ok := resp.Metadatas[bi][pi]["content_hash"].(string); ok {
+					info.ContentHash = ch
+				}
+				if di, ok := resp.Metadatas[bi][pi]["doc_id"].(string); ok {
+					info.DocID = di
+				}
+				if ci, ok := resp.Metadatas[bi][pi]["chunk_index"].(string); ok {
+					info.ChunkIndex = ci
+				}
+			}
+			if bi < len(resp.Documents) && pi < len(resp.Documents[bi]) {
+				content := resp.Documents[bi][pi]
+				if len(content) > 200 {
+					info.Content = content[:200]
+				} else {
+					info.Content = content
+				}
 			}
 			points = append(points, info)
 		}
@@ -211,6 +251,85 @@ func (p *ChromaProvider) ListPoints(ctx context.Context, projectID string, metaF
 }
 
 func (p *ChromaProvider) Close() error { return nil }
+
+// ExportPoints returns every point with full content and all string metadata.
+// Implements Exporter (for migration).
+func (p *ChromaProvider) ExportPoints(ctx context.Context, projectID string) ([]Document, error) {
+	body := map[string]any{"include": []string{"metadatas", "documents"}}
+	var resp chromaQueryResponse
+	if err := p.do(ctx, http.MethodPost, "/api/v1/collections/"+p.collectionName(projectID)+"/get", body, &resp); err != nil {
+		return nil, err
+	}
+	var docs []Document
+	for bi, batch := range resp.IDs {
+		for pi, id := range batch {
+			content := ""
+			if bi < len(resp.Documents) && pi < len(resp.Documents[bi]) {
+				content = resp.Documents[bi][pi]
+			}
+			meta := map[string]string{}
+			docID := id
+			if bi < len(resp.Metadatas) && pi < len(resp.Metadatas[bi]) {
+				for k, v := range resp.Metadatas[bi][pi] {
+					if s, ok := v.(string); ok {
+						meta[k] = s
+					}
+				}
+				if v := meta["doc_id"]; v != "" {
+					docID = v
+				}
+			}
+			docs = append(docs, Document{ID: docID, Content: content, Meta: meta})
+		}
+	}
+	return docs, nil
+}
+
+// CountPoints returns the number of embeddings in a project's collection via
+// Chroma's count endpoint, avoiding a full get. Implements core.ProjectCounter.
+func (p *ChromaProvider) CountPoints(ctx context.Context, projectID string) (int, error) {
+	var count int
+	err := p.do(ctx, http.MethodGet, "/api/v1/collections/"+p.collectionName(projectID)+"/count", nil, &count)
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return count, nil
+}
+
+// ListProjectIDs returns the project IDs backed by this Chroma instance by
+// listing collections and stripping the "project_" prefix. Implements the
+// core.ProjectLister interface so ListProjects/Stats and the dashboard work on
+// Chroma, not only pgvector. Collection names are sanitized (lossy for IDs with
+// characters outside [A-Za-z0-9_-]); common IDs round-trip exactly.
+func (p *ChromaProvider) ListProjectIDs(ctx context.Context) ([]string, error) {
+	var collections []struct {
+		Name string `json:"name"`
+	}
+	if err := p.do(ctx, http.MethodGet, "/api/v1/collections", nil, &collections); err != nil {
+		return nil, fmt.Errorf("chroma list collections: %w", err)
+	}
+	const prefix = "project_"
+	var ids []string
+	for _, c := range collections {
+		if strings.HasPrefix(c.Name, prefix) {
+			ids = append(ids, strings.TrimPrefix(c.Name, prefix))
+		}
+	}
+	return ids, nil
+}
+
+// TokensUsed forwards the embedder's cumulative token count when the embedder
+// tracks it (e.g. Voyage), so core.Service can report embed tokens without
+// direct embedder access. Returns 0 for embedders that don't (e.g. TEI).
+func (p *ChromaProvider) TokensUsed() int64 {
+	if tc, ok := p.embedder.(TokenCounter); ok {
+		return tc.TokensUsed()
+	}
+	return 0
+}
 
 type chromaQueryResponse struct {
 	IDs        [][]string

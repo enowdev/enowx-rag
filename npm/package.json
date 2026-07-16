@@ -1,0 +1,47 @@
+{
+  "name": "enowx-rag",
+  "version": "0.0.0",
+  "description": "Per-project RAG memory MCP server for AI coding agents (native Go binary, downloaded on install)",
+  "keywords": [
+    "rag",
+    "mcp",
+    "vector",
+    "qdrant",
+    "pgvector",
+    "embeddings",
+    "ai",
+    "agents"
+  ],
+  "homepage": "https://github.com/enowdev/enowx-rag",
+  "bugs": "https://github.com/enowdev/enowx-rag/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/enowdev/enowx-rag.git",
+    "directory": "npm"
+  },
+  "license": "Apache-2.0",
+  "author": "enowdev",
+  "bin": {
+    "enowx-rag": "bin/enowx-rag.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "install.js",
+    "bin/enowx-rag.js",
+    "lib/platform.js"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

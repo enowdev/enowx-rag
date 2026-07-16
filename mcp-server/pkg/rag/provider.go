@@ -12,11 +12,19 @@ type Document struct {
 }
 
 // Result is a retrieved chunk with its similarity score.
+//
+// InDense/InLexical are optional origin flags populated only by the hybrid
+// pgvector path (SemanticSearchHybrid); they indicate whether the result
+// appeared in the dense and/or lexical ranking before RRF fusion. Other
+// backends and the dense-only path leave them false. They are additive and
+// omitempty, so existing consumers are unaffected.
 type Result struct {
-	ID      string
-	Content string
-	Score   float64
-	Meta    map[string]string
+	ID        string            `json:"id"`
+	Content   string            `json:"content"`
+	Score     float64           `json:"score"`
+	Meta      map[string]string `json:"meta,omitempty"`
+	InDense   bool              `json:"in_dense,omitempty"`
+	InLexical bool              `json:"in_lexical,omitempty"`
 }
 
 // Provider describes a RAG backend capable of per-project collections.
@@ -54,4 +62,79 @@ type Provider interface {
 type EmbeddingClient interface {
 	Embed(ctx context.Context, texts []string) ([][]float32, error)
 	VectorSize() int
+}
+
+// QueryEmbedder is an optional interface for embedders that distinguish
+// query vs document inputs (e.g. Voyage AI input_type=query). Providers check
+// for this via type assertion in SemanticSearch and prefer EmbedQuery when
+// available, falling back to Embed otherwise.
+type QueryEmbedder interface {
+	EmbedQuery(ctx context.Context, text string) ([]float32, error)
+}
+
+// ModelNamer is an optional interface for embedders that expose their model
+// name. Providers use this in Index() to inject embed_model into document
+// metadata before persisting.
+type ModelNamer interface {
+	ModelName() string
+}
+
+// TokenCounter is an optional interface implemented by embedding clients and
+// rerankers that track cumulative token usage reported by their upstream API
+// (e.g. Voyage AI returns usage.total_tokens). core.Service type-asserts the
+// provider and reranker for this interface to report token metrics; backends
+// that cannot report tokens (e.g. TEI) simply do not implement it, and the
+// metrics layer reports zero honestly. Providers may forward to their
+// embedder's counter when the embedder implements this interface.
+type TokenCounter interface {
+	// TokensUsed returns the total tokens consumed since process start.
+	TokensUsed() int64
+}
+
+// HybridSearcher is an optional interface for providers that support hybrid
+// search combining dense vector similarity with lexical full-text search
+// using Reciprocal Rank Fusion (RRF). Providers that implement this
+// interface are used by core.Service.Search when opts.Hybrid is true.
+// Providers that do not implement it fall back to dense-only SemanticSearch.
+type HybridSearcher interface {
+	SemanticSearchHybrid(ctx context.Context, projectID, query string, limit int) ([]Result, error)
+}
+
+// RerankHit is a single reranked result: the Index of the original document
+// in the input slice and its relevance Score from the reranker.
+type RerankHit struct {
+	Index int     `json:"index"`
+	Score float64 `json:"relevance_score"`
+}
+
+// Reranker is an optional interface for reranking retrieved documents.
+// Implementations (e.g. VoyageReranker) call a rerank API to re-order
+// candidates by relevance to the query.
+type Reranker interface {
+	Rerank(ctx context.Context, query string, docs []string, topK int) ([]RerankHit, error)
+}
+
+// Exporter is an optional interface for providers that can export every stored
+// point of a project with its FULL content and metadata (unlike ListPoints,
+// which truncates content for previews). This is the read side of migration /
+// re-embedding: the returned Documents can be re-embedded by a destination
+// provider. ID is the original doc_id and Meta carries the full stored
+// metadata (source_file, content_hash, chunk_version, embed_model, etc.) so a
+// migration can preserve identity for incremental sync.
+type Exporter interface {
+	ExportPoints(ctx context.Context, projectID string) ([]Document, error)
+}
+
+// PointInfo is a stored point's ID together with the payload fields needed to
+// reconcile it against the current file set during incremental sync. Content
+// and ChunkIndex are populated by ListPoints when the UI needs to display
+// chunk previews (e.g. the Chunks page).
+type PointInfo struct {
+	ID           string `json:"id"`
+	SourceFile   string `json:"source_file,omitempty"`
+	ContentHash  string `json:"content_hash,omitempty"`
+	ChunkVersion string `json:"chunk_version,omitempty"`
+	DocID        string `json:"doc_id,omitempty"` // original document ID (Qdrant stores UUID, doc_id preserves the original)
+	Content      string `json:"content,omitempty"`
+	ChunkIndex   string `json:"chunk_index,omitempty"`
 }

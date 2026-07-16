@@ -2,91 +2,131 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io/fs"
 	"log"
+	"net/http"
 	"os"
-	"strconv"
-	"strings"
+	"path/filepath"
+	"runtime/debug"
 	"time"
 
+	"github.com/enowdev/enowx-rag/pkg/config"
+	"github.com/enowdev/enowx-rag/pkg/core"
+	"github.com/enowdev/enowx-rag/pkg/httpapi"
 	"github.com/enowdev/enowx-rag/pkg/indexer"
 	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/pkg/ragbuild"
+	"github.com/enowdev/enowx-rag/web"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Config holds environment-based configuration for the RAG provider.
-type Config struct {
-	VectorStore  string // qdrant, chroma, pgvector
-	Embedder     string // tei, openai, voyage
-	QdrantURL    string // REST URL, e.g. http://localhost:6333 or https://qdrant.example.com
-	QdrantAPIKey string // optional API key for secured Qdrant instances
-	ChromaURL    string
-	PGVectorDSN  string
-	TEIBaseURL   string // e.g. http://localhost:8081
-	OpenAIKey    string
-	OpenAIBase   string
-	OpenAIModel  string
-	VoyageAPIKey string // Voyage AI API key
-	VoyageModel  string // e.g. voyage-3.5
-	VectorDim    int
-}
+// version is the build version. It defaults to "dev" for `go run`/source
+// builds and is overridden at release time via the linker:
+//
+//	-ldflags "-X main.version=v0.1.0"
+//
+// GoReleaser sets it from the git tag. `go install ...@vX.Y.Z` also reports a
+// meaningful version through runtime/debug build info (see resolvedVersion).
+var version = "dev"
 
-func loadConfig() Config {
-	c := Config{
-		VectorStore:  getEnv("RAG_VECTOR_STORE", "qdrant"),
-		Embedder:     getEnv("RAG_EMBEDDER", "voyage"),
-		QdrantURL:    getEnv("RAG_QDRANT_URL", "http://localhost:6333"),
-		QdrantAPIKey: getEnv("RAG_QDRANT_API_KEY", ""),
-		ChromaURL:    getEnv("RAG_CHROMA_URL", "http://localhost:8000"),
-		PGVectorDSN:  getEnv("RAG_PGVECTOR_DSN", ""),
-		TEIBaseURL:   getEnv("RAG_TEI_URL", "http://localhost:8081"),
-		OpenAIKey:    getEnv("RAG_OPENAI_API_KEY", ""),
-		OpenAIBase:   getEnv("RAG_OPENAI_BASE_URL", "https://api.openai.com/v1"),
-		OpenAIModel:  getEnv("RAG_OPENAI_MODEL", "text-embedding-3-small"),
-		VoyageAPIKey: getEnv("RAG_VOYAGE_API_KEY", ""),
-		VoyageModel:  getEnv("RAG_VOYAGE_MODEL", "voyage-4"),
+// resolvedVersion returns the ldflags-injected version when set, otherwise it
+// falls back to the module version recorded in the binary's build info. That
+// fallback makes `go install github.com/enowdev/enowx-rag/...@v0.1.0` report
+// "v0.1.0" even though it doesn't pass our -ldflags.
+func resolvedVersion() string {
+	if version != "dev" {
+		return version
 	}
-	if d, err := strconv.Atoi(os.Getenv("RAG_VECTOR_DIM")); err == nil && d > 0 {
-		c.VectorDim = d
-	}
-	// Fall back to tei if voyage key is missing and embedder wasn't set explicitly
-	if c.Embedder == "voyage" && c.VoyageAPIKey == "" && os.Getenv("RAG_EMBEDDER") == "" {
-		c.Embedder = "tei"
-	}
-	return c
-}
-
-func getEnv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-func buildProvider(ctx context.Context, cfg Config) (rag.Provider, error) {
-	var embedder rag.EmbeddingClient
-	switch strings.ToLower(cfg.Embedder) {
-	case "tei":
-		embedder = rag.NewTEIEmbeddingClient(cfg.TEIBaseURL)
-	case "voyage":
-		if cfg.VoyageAPIKey == "" {
-			return nil, fmt.Errorf("RAG_VOYAGE_API_KEY is required for voyage embedder")
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if v := info.Main.Version; v != "" && v != "(devel)" {
+			return v
 		}
-		embedder = rag.NewVoyageEmbeddingClient(cfg.VoyageAPIKey, cfg.VoyageModel)
-	default:
-		return nil, fmt.Errorf("unsupported embedder: %s", cfg.Embedder)
+	}
+	return version
+}
+
+// RuntimeConfig holds the resolved configuration used to build the service
+// layer. It is populated from three sources with strict priority:
+// environment variables > config file (~/.enowx-rag/config.yaml) > defaults.
+type RuntimeConfig struct {
+	VectorStore   string
+	Embedder      string
+	QdrantURL     string
+	QdrantAPIKey  string
+	ChromaURL     string
+	PGVectorDSN   string
+	TEIBaseURL    string
+	VoyageAPIKey  string
+	VoyageModel   string
+	OpenAIAPIKey  string
+	OpenAIModel   string
+	OpenAIBaseURL string
+	OpenAIDim     int
+	RerankerModel string
+	VectorDim     int
+}
+
+// resolveConfig builds a RuntimeConfig from the three-tier priority:
+// env var > config file > default. It uses pkg/config.Resolve() which
+// handles the file loading and env override logic.
+func resolveConfig() (*RuntimeConfig, error) {
+	cfg, err := config.Resolve()
+	if err != nil {
+		return nil, fmt.Errorf("resolve config: %w", err)
 	}
 
-	switch strings.ToLower(cfg.VectorStore) {
-	case "qdrant":
-		return rag.NewQdrantProvider(ctx, cfg.QdrantURL, cfg.QdrantAPIKey, embedder)
-	case "chroma":
-		return rag.NewChromaProvider(cfg.ChromaURL, embedder), nil
-	case "pgvector":
-		return rag.NewPGVectorProvider(ctx, cfg.PGVectorDSN, embedder, "project_memory")
-	default:
-		return nil, fmt.Errorf("unsupported vector store: %s", cfg.VectorStore)
+	rc := &RuntimeConfig{
+		VectorStore:   cfg.VectorStore,
+		Embedder:      cfg.Embedder,
+		QdrantURL:     cfg.QdrantURL,
+		QdrantAPIKey:  cfg.QdrantAPIKey,
+		ChromaURL:     cfg.ChromaURL,
+		PGVectorDSN:   cfg.PGVectorDSN,
+		TEIBaseURL:    cfg.TEIURL,
+		VoyageAPIKey:  cfg.Voyage.APIKey,
+		VoyageModel:   cfg.Voyage.Model,
+		OpenAIAPIKey:  cfg.OpenAI.APIKey,
+		OpenAIModel:   cfg.OpenAI.Model,
+		OpenAIBaseURL: cfg.OpenAI.BaseURL,
+		OpenAIDim:     cfg.OpenAI.Dim,
+		RerankerModel: cfg.RerankerModel,
+		VectorDim:     cfg.Voyage.Dim,
 	}
+
+	// Fall back to tei if voyage key is missing and embedder wasn't set
+	// explicitly via env var. This preserves the original main.go behavior.
+	if rc.Embedder == "voyage" && rc.VoyageAPIKey == "" && os.Getenv("RAG_EMBEDDER") == "" {
+		rc.Embedder = "tei"
+	}
+
+	return rc, nil
+}
+
+func buildProvider(ctx context.Context, cfg *RuntimeConfig) (rag.Provider, error) {
+	return ragbuild.BuildProvider(ctx, ragbuild.Spec{
+		VectorStore:   cfg.VectorStore,
+		Embedder:      cfg.Embedder,
+		QdrantURL:     cfg.QdrantURL,
+		QdrantAPIKey:  cfg.QdrantAPIKey,
+		ChromaURL:     cfg.ChromaURL,
+		PGVectorDSN:   cfg.PGVectorDSN,
+		VoyageAPIKey:  cfg.VoyageAPIKey,
+		VoyageModel:   cfg.VoyageModel,
+		VoyageDim:     cfg.VectorDim,
+		OpenAIAPIKey:  cfg.OpenAIAPIKey,
+		OpenAIModel:   cfg.OpenAIModel,
+		OpenAIBaseURL: cfg.OpenAIBaseURL,
+		OpenAIDim:     cfg.OpenAIDim,
+		TEIURL:        cfg.TEIBaseURL,
+	})
+}
+
+// buildService wraps a provider, optional reranker, and indexer into a
+// core.Service that both MCP and HTTP handlers call.
+func buildService(provider rag.Provider, reranker rag.Reranker, idx *indexer.Indexer) *core.Service {
+	return core.NewService(provider, reranker, idx)
 }
 
 // Tool inputs.
@@ -111,12 +151,35 @@ type SemanticSearchInput struct {
 	ProjectID string `json:"project_id" jsonschema:"Project identifier"`
 	Query     string `json:"query" jsonschema:"Query text"`
 	Limit     int    `json:"limit" jsonschema:"Number of results to return (default 5)"`
+	Recall    int    `json:"recall" jsonschema:"Candidates retrieved before reranking (default 40)"`
+	Hybrid    *bool  `json:"hybrid" jsonschema:"Combine dense + lexical search when the backend supports it (default true)"`
+	Rerank    *bool  `json:"rerank" jsonschema:"Rerank candidates with the reranker when configured (default true)"`
+	Compress  bool   `json:"compress" jsonschema:"Drop near-duplicate results (default false)"`
 }
 
 type RetrieveContextInput struct {
 	ProjectID string `json:"project_id" jsonschema:"Project identifier"`
 	Query     string `json:"query" jsonschema:"Question or topic to retrieve context for"`
 	Limit     int    `json:"limit" jsonschema:"Number of chunks to retrieve (default 5)"`
+	Recall    int    `json:"recall" jsonschema:"Candidates retrieved before reranking (default 40)"`
+	Hybrid    *bool  `json:"hybrid" jsonschema:"Combine dense + lexical search when the backend supports it (default true)"`
+	Rerank    *bool  `json:"rerank" jsonschema:"Rerank candidates with the reranker when configured (default true)"`
+	Compress  bool   `json:"compress" jsonschema:"Drop near-duplicate results (default false)"`
+}
+
+// searchOptsFromMCP builds SearchOpts from MCP tool inputs. Hybrid and Rerank
+// default to true (nil pointer) so the built-in hybrid/rerank features are used
+// by default from MCP clients; they only take effect when the backend/reranker
+// supports them (otherwise Search falls back gracefully).
+func searchOptsFromMCP(limit, recall int, hybrid, rerank *bool, compress bool) core.SearchOpts {
+	b := func(p *bool) bool { return p == nil || *p }
+	return core.SearchOpts{
+		K:        limit,
+		Recall:   recall,
+		Hybrid:   b(hybrid),
+		Rerank:   b(rerank),
+		Compress: compress,
+	}
 }
 
 type ScanProjectInput struct {
@@ -124,8 +187,46 @@ type ScanProjectInput struct {
 	Directory string `json:"directory" jsonschema:"Absolute path to the project directory to scan and index"`
 }
 
+// EmptyInput is used by tools that take no arguments (e.g. rag_list_projects).
+type EmptyInput struct{}
+
+type ProjectIDInput struct {
+	ProjectID string `json:"project_id" jsonschema:"Project identifier"`
+}
+
+type ListPointsInput struct {
+	ProjectID  string `json:"project_id" jsonschema:"Project identifier"`
+	SourceFile string `json:"source_file" jsonschema:"Optional: only list chunks from this source file"`
+}
+
+type DeletePointsInput struct {
+	ProjectID string   `json:"project_id" jsonschema:"Project identifier"`
+	PointIDs  []string `json:"point_ids" jsonschema:"IDs of the chunks/points to delete"`
+}
+
 func main() {
-	cfg := loadConfig()
+	// Subcommand dispatch (must run before flag.Parse, which only handles the
+	// default mode's flags). `enowx-rag setup [--run]` generates/runs the
+	// docker-compose backend from the command line — never over HTTP.
+	if len(os.Args) > 1 && os.Args[1] == "setup" {
+		runSetup(os.Args[2:])
+		return
+	}
+	// `enowx-rag version` / `--version` / `-v` prints the build version.
+	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version" || os.Args[1] == "-v") {
+		fmt.Printf("enowx-rag %s\n", resolvedVersion())
+		return
+	}
+
+	serve := flag.Bool("serve", false, "run HTTP+UI server instead of stdio MCP")
+	addr := flag.String("addr", ":7777", "HTTP listen address (only used with --serve)")
+	flag.Parse()
+
+	cfg, err := resolveConfig()
+	if err != nil {
+		log.Fatalf("failed to resolve config: %v", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	provider, err := buildProvider(ctx, cfg)
 	cancel()
@@ -134,15 +235,104 @@ func main() {
 	}
 	defer provider.Close()
 
-	server := mcp.NewServer(&mcp.Implementation{Name: "enowx-rag", Version: "0.1.0"}, &mcp.ServerOptions{
+	// Build the service layer that wraps provider + indexer.
+	idx := indexer.NewIndexer(provider, 1500)
+
+	// Build the reranker when a model is configured and the Voyage API key
+	// is available. The reranker shares the same Voyage API key used for
+	// embeddings. When RerankerModel is empty, reranker is nil and
+	// Search with Rerank=true silently falls back to semantic order.
+	var reranker rag.Reranker
+	if cfg.RerankerModel != "" && cfg.VoyageAPIKey != "" {
+		reranker = rag.NewVoyageReranker(cfg.VoyageAPIKey, cfg.RerankerModel)
+	}
+
+	svc := buildService(provider, reranker, idx)
+	svc.SetEmbedModel(cfg.VoyageModel)
+	svc.SetBackend(cfg.VectorStore)
+
+	// Durable metrics: a local SQLite file (pure-Go, no cgo) that works with any
+	// vector-store backend. If it can't be opened, fall back to in-memory
+	// metrics rather than failing startup.
+	metricsPath := config.MetricsDBPath()
+	if err := os.MkdirAll(filepath.Dir(metricsPath), 0o700); err == nil {
+		if store, err := core.NewSQLiteMetricsStore(metricsPath); err != nil {
+			fmt.Fprintf(os.Stderr, "metrics: durable store unavailable, using in-memory: %v\n", err)
+		} else {
+			svc.SetMetricsStore(store)
+			defer store.Close()
+		}
+	}
+
+	if *serve {
+		runHTTP(svc, *addr, cfg)
+		return
+	}
+	runStdio(svc, cfg)
+}
+
+// newMCPServer builds an *mcp.Server with all enowx-rag tools registered. It is
+// shared by both transports: stdio (single session) and the streamable HTTP
+// handler (many concurrent sessions).
+func newMCPServer(svc *core.Service) *mcp.Server {
+	server := mcp.NewServer(&mcp.Implementation{Name: "enowx-rag", Version: resolvedVersion()}, &mcp.ServerOptions{
 		Instructions: "Per-project RAG memory: create collections, index project documents, and retrieve/semantic-search context. Connects to Qdrant/Chroma/pgvector with TEI embeddings.",
 	})
+	registerMCPTools(server, svc)
+	return server
+}
 
+// runStdio starts the MCP server in stdio mode. This is the default mode
+// when --serve is not passed. Logs go to stderr (stdout is MCP protocol).
+func runStdio(svc *core.Service, cfg *RuntimeConfig) {
+	server := newMCPServer(svc)
+
+	// Log tool configuration to stderr so it doesn't interfere with stdio transport.
+	fmt.Fprintf(os.Stderr, "enowx-rag mcp-server ready: vector_store=%s embedder=%s\n", cfg.VectorStore, cfg.Embedder)
+	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// runHTTP starts the HTTP API + SPA server on the given address, and also mounts
+// the MCP server over HTTP at /mcp so agents can use enowx-rag as a remote
+// daemon (behind RAG_ADMIN_TOKEN when set).
+func runHTTP(svc *core.Service, addr string, cfg *RuntimeConfig) {
+	// Extract the dist subdirectory from the embedded filesystem.
+	distFS, err := fs.Sub(web.Dist, "dist")
+	if err != nil {
+		log.Fatalf("failed to get embedded dist: %v", err)
+	}
+
+	// MCP over HTTP: one server instance shared across all sessions. Stateless
+	// mode suits a request/response RAG tool server and is easy to scale.
+	mcpSrv := newMCPServer(svc)
+	mcpHandler := mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return mcpSrv },
+		&mcp.StreamableHTTPOptions{Stateless: true},
+	)
+
+	handler := httpapi.NewRouter(svc, distFS, mcpHandler)
+
+	authNote := "open (no RAG_ADMIN_TOKEN set)"
+	if os.Getenv("RAG_ADMIN_TOKEN") != "" {
+		authNote = "requires Authorization: Bearer <RAG_ADMIN_TOKEN>"
+	}
+	fmt.Fprintf(os.Stderr, "enowx-rag HTTP server starting on %s: vector_store=%s embedder=%s; MCP at /mcp (%s)\n", addr, cfg.VectorStore, cfg.Embedder, authNote)
+	if err := http.ListenAndServe(addr, handler); err != nil {
+		log.Fatalf("HTTP server error: %v", err)
+	}
+}
+
+// registerMCPTools registers all MCP tools on the server, each as a thin
+// wrapper over the core.Service methods. No direct provider/indexer calls
+// are made inside the closures.
+func registerMCPTools(server *mcp.Server, svc *core.Service) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "rag_create_project",
 		Description: "Create a new RAG collection for a project. Safe to call if collection already exists.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in CreateProjectInput) (*mcp.CallToolResult, any, error) {
-		if err := provider.CreateCollection(ctx, in.ProjectID); err != nil {
+		if err := svc.CreateProject(ctx, in.ProjectID); err != nil {
 			return nil, nil, err
 		}
 		return nil, map[string]any{"status": "ok", "project_id": in.ProjectID}, nil
@@ -152,7 +342,7 @@ func main() {
 		Name:        "rag_delete_project",
 		Description: "Delete the RAG collection for a project and all its indexed memory.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in DeleteProjectInput) (*mcp.CallToolResult, any, error) {
-		if err := provider.DeleteCollection(ctx, in.ProjectID); err != nil {
+		if err := svc.DeleteProject(ctx, in.ProjectID); err != nil {
 			return nil, nil, err
 		}
 		return nil, map[string]any{"status": "deleted", "project_id": in.ProjectID}, nil
@@ -166,7 +356,7 @@ func main() {
 		for i, d := range in.Documents {
 			docs[i] = rag.Document{ID: d.ID, Content: d.Content, Meta: d.Meta}
 		}
-		if err := provider.Index(ctx, in.ProjectID, docs); err != nil {
+		if err := svc.IndexDocuments(ctx, in.ProjectID, docs); err != nil {
 			return nil, nil, err
 		}
 		return nil, map[string]any{"status": "indexed", "count": len(docs)}, nil
@@ -176,7 +366,8 @@ func main() {
 		Name:        "rag_semantic_search",
 		Description: "Semantic search over a project collection. Returns the most relevant chunks with similarity scores.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in SemanticSearchInput) (*mcp.CallToolResult, any, error) {
-		res, err := provider.SemanticSearch(ctx, in.ProjectID, in.Query, in.Limit)
+		opts := searchOptsFromMCP(in.Limit, in.Recall, in.Hybrid, in.Rerank, in.Compress)
+		res, err := svc.Search(ctx, in.ProjectID, in.Query, opts)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -187,16 +378,12 @@ func main() {
 		Name:        "rag_retrieve_context",
 		Description: "Retrieve a compact context string for a project. Fetches top chunks and concatenates them for LLM context.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in RetrieveContextInput) (*mcp.CallToolResult, any, error) {
-		res, err := provider.SemanticSearch(ctx, in.ProjectID, in.Query, in.Limit)
+		opts := searchOptsFromMCP(in.Limit, in.Recall, in.Hybrid, in.Rerank, in.Compress)
+		context, chunks, err := svc.RetrieveContext(ctx, in.ProjectID, in.Query, opts)
 		if err != nil {
 			return nil, nil, err
 		}
-		parts := make([]string, 0, len(res))
-		for _, r := range res {
-			parts = append(parts, fmt.Sprintf("[score %.3f] %s", r.Score, r.Content))
-		}
-		context := strings.Join(parts, "\n\n")
-		return nil, map[string]any{"context": context, "chunks": res}, nil
+		return nil, map[string]any{"context": context, "chunks": chunks}, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -208,14 +395,13 @@ func main() {
 		// even very large monorepos.
 		indexCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		idx := indexer.NewIndexer(provider, 1500)
-		result, err := idx.IndexProject(indexCtx, in.ProjectID, in.Directory)
+		result, err := svc.IndexProject(indexCtx, in.ProjectID, in.Directory)
 		if err != nil {
 			return nil, nil, err
 		}
 		return nil, map[string]any{
-			"status":        "synced",
-			"project_id":    in.ProjectID,
+			"status":         "synced",
+			"project_id":     in.ProjectID,
 			"chunks_indexed": result.Indexed,
 			"points_deleted": result.Deleted,
 			"files_scanned":  result.FilesScanned,
@@ -223,10 +409,73 @@ func main() {
 		}, nil
 	})
 
-	// Log tool configuration to stderr so it doesn't interfere with stdio transport.
-	fmt.Fprintf(os.Stderr, "enowx-rag mcp-server ready: vector_store=%s embedder=%s\n", cfg.VectorStore, cfg.Embedder)
-	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-		log.Fatal(err)
-	}
-}
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rag_list_projects",
+		Description: "List all RAG projects with their chunk counts. Use this to discover what memory is available before searching.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in EmptyInput) (*mcp.CallToolResult, any, error) {
+		stats, err := svc.ListProjects(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if stats == nil {
+			stats = []core.ProjectStat{}
+		}
+		return nil, map[string]any{"projects": stats}, nil
+	})
 
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rag_project_exists",
+		Description: "Check whether a project has any indexed memory. Useful before searching or indexing.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in ProjectIDInput) (*mcp.CallToolResult, any, error) {
+		return nil, map[string]any{"project_id": in.ProjectID, "exists": svc.ProjectExists(ctx, in.ProjectID)}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rag_list_points",
+		Description: "List indexed chunks in a project (id, source file, content preview), optionally filtered by source file. Use to inspect what is stored.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in ListPointsInput) (*mcp.CallToolResult, any, error) {
+		filter := map[string]string{}
+		if in.SourceFile != "" {
+			filter["source_file"] = in.SourceFile
+		}
+		points, err := svc.ListPoints(ctx, in.ProjectID, filter)
+		if err != nil {
+			return nil, nil, err
+		}
+		if points == nil {
+			points = []rag.PointInfo{}
+		}
+		return nil, map[string]any{"points": points, "count": len(points)}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rag_delete_points",
+		Description: "Delete specific chunks/points from a project by their IDs (e.g. to remove stale entries without a full re-index).",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in DeletePointsInput) (*mcp.CallToolResult, any, error) {
+		if err := svc.DeletePoints(ctx, in.ProjectID, in.PointIDs); err != nil {
+			return nil, nil, err
+		}
+		return nil, map[string]any{"status": "deleted", "project_id": in.ProjectID, "count": len(in.PointIDs)}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rag_stats",
+		Description: "Get aggregate RAG statistics: projects, total chunks, embedding model, query latency, and token usage.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in EmptyInput) (*mcp.CallToolResult, any, error) {
+		stats, err := svc.ListProjects(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		totalChunks := 0
+		for _, s := range stats {
+			totalChunks += s.ChunkCount
+		}
+		m := svc.MetricsSnapshot(ctx)
+		return nil, map[string]any{
+			"total_projects": len(stats),
+			"total_chunks":   totalChunks,
+			"embed_model":    svc.EmbedModel(),
+			"metrics":        m,
+		}, nil
+	})
+}

@@ -94,6 +94,13 @@ func (p *QdrantProvider) Index(ctx context.Context, projectID string, docs []Doc
 		return fmt.Errorf("embedding count mismatch: got %d, want %d", len(vectors), len(docs))
 	}
 
+	// Determine embed_model and embed_dim for metadata injection.
+	embedModel := "unknown"
+	if mn, ok := p.embedder.(ModelNamer); ok {
+		embedModel = mn.ModelName()
+	}
+	embedDim := p.vectorDim
+
 	points := make([]map[string]any, len(docs))
 	for i, d := range docs {
 		// Qdrant only accepts an unsigned integer or a UUID as a point ID, but
@@ -105,7 +112,12 @@ func (p *QdrantProvider) Index(ctx context.Context, projectID string, docs []Doc
 			rawID = uuid.NewString()
 		}
 		id := pointID(rawID)
-		payload := map[string]any{"content": d.Content, "doc_id": rawID}
+		payload := map[string]any{
+			"content":     d.Content,
+			"doc_id":      rawID,
+			"embed_model": embedModel,
+			"embed_dim":   embedDim,
+		}
 		for k, v := range d.Meta {
 			payload[k] = v
 		}
@@ -115,20 +127,14 @@ func (p *QdrantProvider) Index(ctx context.Context, projectID string, docs []Doc
 			vec[j] = float64(x)
 		}
 		points[i] = map[string]any{
-			"id":       id,
-			"vector":   vec,
-			"payload":  payload,
+			"id":      id,
+			"vector":  vec,
+			"payload": payload,
 		}
 	}
 
 	body := map[string]any{"points": points}
 	return p.do(ctx, http.MethodPut, "/collections/"+name+"/points?wait=true", body, nil)
-}
-
-// QueryEmbedder is an optional interface for embedders that distinguish
-// query vs document inputs (e.g. Voyage AI input_type).
-type QueryEmbedder interface {
-	EmbedQuery(ctx context.Context, text string) ([]float32, error)
 }
 
 func (p *QdrantProvider) SemanticSearch(ctx context.Context, projectID, query string, limit int) ([]Result, error) {
@@ -227,15 +233,8 @@ func (p *QdrantProvider) ListPointIDs(ctx context.Context, projectID string, met
 	return ids, nil
 }
 
-// PointInfo is a Qdrant point's ID together with the payload fields needed to
-// reconcile it against the current file set.
-type PointInfo struct {
-	ID         string
-	SourceFile string
-}
-
 // ListPoints scrolls all points (optionally filtered by metadata), returning
-// each point's Qdrant ID and its source_file payload.
+// each point's Qdrant ID and its source_file, content_hash, and doc_id payload.
 func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaFilter map[string]string) ([]PointInfo, error) {
 	name := p.collectionName(projectID)
 	must := []map[string]any{}
@@ -252,7 +251,7 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 	for {
 		body := map[string]any{
 			"limit":        limit,
-			"with_payload": []string{"source_file"},
+			"with_payload": true,
 			"with_vector":  false,
 		}
 		if scrollOffset != nil {
@@ -265,9 +264,7 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 			Result struct {
 				Points []struct {
 					ID      any `json:"id"`
-					Payload struct {
-						SourceFile string `json:"source_file"`
-					} `json:"payload"`
+					Payload map[string]any `json:"payload"`
 				} `json:"points"`
 				NextOffset any `json:"next_page_offset"`
 			} `json:"result"`
@@ -276,10 +273,29 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 			return nil, fmt.Errorf("qdrant scroll: %w", err)
 		}
 		for _, pt := range resp.Result.Points {
-			all = append(all, PointInfo{
-				ID:         fmt.Sprintf("%v", pt.ID),
-				SourceFile: pt.Payload.SourceFile,
-			})
+			pi := PointInfo{
+				ID: fmt.Sprintf("%v", pt.ID),
+			}
+			if v, ok := pt.Payload["source_file"].(string); ok {
+				pi.SourceFile = v
+			}
+			if v, ok := pt.Payload["content_hash"].(string); ok {
+				pi.ContentHash = v
+			}
+			if v, ok := pt.Payload["doc_id"].(string); ok {
+				pi.DocID = v
+			}
+			if v, ok := pt.Payload["content"].(string); ok {
+				if len(v) > 200 {
+					pi.Content = v[:200]
+				} else {
+					pi.Content = v
+				}
+			}
+			if v, ok := pt.Payload["chunk_index"].(string); ok {
+				pi.ChunkIndex = v
+			}
+			all = append(all, pi)
 		}
 		if resp.Result.NextOffset == nil {
 			break
@@ -287,6 +303,52 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 		scrollOffset = resp.Result.NextOffset
 	}
 	return all, nil
+}
+
+// ExportPoints scrolls every point with full payload and returns Documents with
+// full content and all string metadata. Implements Exporter (for migration).
+func (p *QdrantProvider) ExportPoints(ctx context.Context, projectID string) ([]Document, error) {
+	name := p.collectionName(projectID)
+	var docs []Document
+	var scrollOffset any = nil
+	limit := 256
+	for {
+		body := map[string]any{"limit": limit, "with_payload": true, "with_vector": false}
+		if scrollOffset != nil {
+			body["offset"] = scrollOffset
+		}
+		var resp struct {
+			Result struct {
+				Points []struct {
+					ID      any            `json:"id"`
+					Payload map[string]any `json:"payload"`
+				} `json:"points"`
+				NextOffset any `json:"next_page_offset"`
+			} `json:"result"`
+		}
+		if err := p.do(ctx, http.MethodPost, "/collections/"+name+"/points/scroll", body, &resp); err != nil {
+			return nil, fmt.Errorf("qdrant export scroll: %w", err)
+		}
+		for _, pt := range resp.Result.Points {
+			content, _ := pt.Payload["content"].(string)
+			meta := make(map[string]string, len(pt.Payload))
+			for k, v := range pt.Payload {
+				if s, ok := v.(string); ok {
+					meta[k] = s
+				}
+			}
+			id := fmt.Sprintf("%v", pt.ID)
+			if v, ok := pt.Payload["doc_id"].(string); ok && v != "" {
+				id = v
+			}
+			docs = append(docs, Document{ID: id, Content: content, Meta: meta})
+		}
+		if resp.Result.NextOffset == nil {
+			break
+		}
+		scrollOffset = resp.Result.NextOffset
+	}
+	return docs, nil
 }
 
 // pointID maps an arbitrary document ID to a value Qdrant accepts as a point
@@ -301,6 +363,67 @@ func pointID(raw string) string {
 }
 
 func (p *QdrantProvider) Close() error { return nil }
+
+// TokensUsed forwards the embedder's cumulative token count when the embedder
+// tracks it (e.g. Voyage), so core.Service can report embed tokens without
+// direct embedder access. Returns 0 for embedders that don't (e.g. TEI).
+func (p *QdrantProvider) TokensUsed() int64 {
+	if tc, ok := p.embedder.(TokenCounter); ok {
+		return tc.TokensUsed()
+	}
+	return 0
+}
+
+// CountPoints returns the number of points in a project's collection using
+// Qdrant's points/count endpoint, avoiding a full scroll. Implements
+// core.ProjectCounter. A missing collection counts as 0.
+func (p *QdrantProvider) CountPoints(ctx context.Context, projectID string) (int, error) {
+	var resp struct {
+		Result struct {
+			Count int `json:"count"`
+		} `json:"result"`
+	}
+	body := map[string]any{"exact": true}
+	err := p.do(ctx, http.MethodPost, "/collections/"+p.collectionName(projectID)+"/points/count", body, &resp)
+	if err != nil {
+		// Treat a missing collection as an empty project rather than an error.
+		if strings.Contains(err.Error(), "404") {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return resp.Result.Count, nil
+}
+
+// ListProjectIDs returns the project IDs backed by this Qdrant instance by
+// listing collections and stripping the "project_" prefix. This implements the
+// core.ProjectLister interface so ListProjects/Stats and the dashboard work on
+// Qdrant, not only pgvector.
+//
+// Note: collection names are sanitized (see sanitize), which is lossy for
+// project IDs containing characters outside [A-Za-z0-9_-]. For such IDs the
+// returned value is the sanitized form. Common IDs (e.g. "enowx-rag") round-trip
+// exactly.
+func (p *QdrantProvider) ListProjectIDs(ctx context.Context) ([]string, error) {
+	var resp struct {
+		Result struct {
+			Collections []struct {
+				Name string `json:"name"`
+			} `json:"collections"`
+		} `json:"result"`
+	}
+	if err := p.do(ctx, http.MethodGet, "/collections", nil, &resp); err != nil {
+		return nil, fmt.Errorf("qdrant list collections: %w", err)
+	}
+	const prefix = "project_"
+	var ids []string
+	for _, c := range resp.Result.Collections {
+		if strings.HasPrefix(c.Name, prefix) {
+			ids = append(ids, strings.TrimPrefix(c.Name, prefix))
+		}
+	}
+	return ids, nil
+}
 
 func (p *QdrantProvider) do(ctx context.Context, method, path string, body any, out any) error {
 	var bodyReader io.Reader
