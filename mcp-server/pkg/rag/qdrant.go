@@ -57,6 +57,11 @@ func NewQdrantProvider(ctx context.Context, baseURL, apiKey string, embedder Emb
 	return p, nil
 }
 
+// payloadContentKey is the Qdrant payload field holding the document text.
+// It is promoted to a dedicated struct field on read, so it must be excluded
+// from the generic metadata map to avoid returning the text twice.
+const payloadContentKey = "content"
+
 func (p *QdrantProvider) collectionName(projectID string) string {
 	return "project_" + sanitize(projectID)
 }
@@ -188,6 +193,13 @@ func (p *QdrantProvider) SemanticSearch(ctx context.Context, projectID, query st
 		}
 		meta := make(map[string]string, len(r.Payload))
 		for k, v := range r.Payload {
+			// "content" is already returned in Result.Content. Copying it into
+			// Meta as well would ship the full document text twice in every
+			// search response, roughly doubling the tokens an agent pays to
+			// read a result.
+			if k == payloadContentKey {
+				continue
+			}
 			if s, ok := v.(string); ok {
 				meta[k] = s
 			}
@@ -295,6 +307,21 @@ func (p *QdrantProvider) ListPoints(ctx context.Context, projectID string, metaF
 			if v, ok := pt.Payload["chunk_index"].(string); ok {
 				pi.ChunkIndex = v
 			}
+			// Surface any remaining payload tags (bucket/kind/title/ts when the
+			// store holds agent memory). Promoted fields and the document text
+			// are excluded so nothing is returned twice.
+			for k, v := range pt.Payload {
+				switch k {
+				case payloadContentKey, "source_file", "content_hash", "doc_id", "chunk_index":
+					continue
+				}
+				if s, ok := v.(string); ok {
+					if pi.Meta == nil {
+						pi.Meta = make(map[string]string)
+					}
+					pi.Meta[k] = s
+				}
+			}
 			all = append(all, pi)
 		}
 		if resp.Result.NextOffset == nil {
@@ -330,9 +357,15 @@ func (p *QdrantProvider) ExportPoints(ctx context.Context, projectID string) ([]
 			return nil, fmt.Errorf("qdrant export scroll: %w", err)
 		}
 		for _, pt := range resp.Result.Points {
-			content, _ := pt.Payload["content"].(string)
+			content, _ := pt.Payload[payloadContentKey].(string)
 			meta := make(map[string]string, len(pt.Payload))
 			for k, v := range pt.Payload {
+				// Carried in Document.Content; Index() rewrites the payload's
+				// content field from there, so keeping a copy in Meta would
+				// only bloat the migration stream.
+				if k == payloadContentKey {
+					continue
+				}
 				if s, ok := v.(string); ok {
 					meta[k] = s
 				}

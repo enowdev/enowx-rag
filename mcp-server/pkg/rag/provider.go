@@ -137,4 +137,8 @@ type PointInfo struct {
 	DocID        string `json:"doc_id,omitempty"` // original document ID (Qdrant stores UUID, doc_id preserves the original)
 	Content      string `json:"content,omitempty"`
 	ChunkIndex   string `json:"chunk_index,omitempty"`
+	// Meta carries any remaining payload fields that are not promoted to a
+	// field above — e.g. the bucket/kind/title/ts tags used when the store
+	// holds agent memory rather than a code index. Never includes "content".
+	Meta map[string]string `json:"meta,omitempty"`
 }

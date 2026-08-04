@@ -224,3 +224,142 @@ func TestQdrantExportPoints(t *testing.T) {
 		t.Error("metadata not preserved")
 	}
 }
+
+// TestQdrantSearchMetaExcludesContent is the token-cost regression guard: the
+// document text is promoted to Result.Content, so it must not also appear in
+// Result.Meta. Returning both ships the same text twice in every response.
+func TestQdrantSearchMetaExcludesContent(t *testing.T) {
+	const docText = "Title: fleet-notes\n\nThe SCTB counter tracks secret fish."
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		resp := map[string]any{
+			"result": []any{
+				map[string]any{
+					"id":    "abc-123",
+					"score": 0.87,
+					"payload": map[string]any{
+						"content": docText,
+						"doc_id":  "memory/trackstat/fleet-notes",
+						"bucket":  "trackstat",
+						"kind":    "ref",
+						"ts":      "2026-08-04T10:00+07:00",
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	p, err := NewQdrantProvider(context.Background(), srv.URL, "", &mockQueryEmbedder{})
+	if err != nil {
+		t.Fatalf("NewQdrantProvider: %v", err)
+	}
+	defer p.Close()
+
+	results, err := p.SemanticSearch(context.Background(), "memory", "sctb", 5)
+	if err != nil {
+		t.Fatalf("SemanticSearch: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	r := results[0]
+
+	if r.Content != docText {
+		t.Errorf("Content = %q, want the document text", r.Content)
+	}
+	if _, present := r.Meta["content"]; present {
+		t.Error(`Meta["content"] is set: document text returned twice in one response`)
+	}
+	for k, v := range r.Meta {
+		if v == docText {
+			t.Errorf("Meta[%q] duplicates the document text", k)
+		}
+	}
+
+	// The genuinely useful metadata must survive the exclusion.
+	for k, want := range map[string]string{
+		"bucket": "trackstat",
+		"kind":   "ref",
+		"doc_id": "memory/trackstat/fleet-notes",
+	} {
+		if got := r.Meta[k]; got != want {
+			t.Errorf("Meta[%q] = %q, want %q", k, got, want)
+		}
+	}
+}
+
+// TestQdrantListPointsSurfacesMeta verifies that ListPoints exposes the
+// bucket/kind/ts tags the agent-memory workflow filters on, while still
+// keeping the full document text out of Meta.
+func TestQdrantListPointsSurfacesMeta(t *testing.T) {
+	const docText = "Title: deploy-log\n\nDeployed at 03:00."
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		resp := map[string]any{
+			"result": map[string]any{
+				"points": []any{
+					map[string]any{
+						"id": "pt-1",
+						"payload": map[string]any{
+							"content":     docText,
+							"doc_id":      "memory/travelya/deploy-log",
+							"bucket":      "travelya",
+							"kind":        "log",
+							"ts":          "2026-08-04T03:00+07:00",
+							"source_file": "notes.md",
+						},
+					},
+				},
+				"next_page_offset": nil,
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	p, err := NewQdrantProvider(context.Background(), srv.URL, "", &mockQueryEmbedder{})
+	if err != nil {
+		t.Fatalf("NewQdrantProvider: %v", err)
+	}
+	defer p.Close()
+
+	points, err := p.ListPoints(context.Background(), "memory", map[string]string{"bucket": "travelya"})
+	if err != nil {
+		t.Fatalf("ListPoints: %v", err)
+	}
+	if len(points) != 1 {
+		t.Fatalf("expected 1 point, got %d", len(points))
+	}
+	pt := points[0]
+
+	if pt.Meta["bucket"] != "travelya" || pt.Meta["kind"] != "log" {
+		t.Errorf("Meta missing bucket/kind tags: %v", pt.Meta)
+	}
+	if pt.Meta["ts"] == "" {
+		t.Error("Meta[\"ts\"] missing: memory listings sort on it")
+	}
+	if _, present := pt.Meta["content"]; present {
+		t.Error(`Meta["content"] is set: full text leaked into the listing`)
+	}
+	// Fields promoted to their own struct field must not be echoed in Meta.
+	for _, k := range []string{"source_file", "doc_id"} {
+		if _, present := pt.Meta[k]; present {
+			t.Errorf("Meta[%q] duplicates a promoted PointInfo field", k)
+		}
+	}
+	if pt.SourceFile != "notes.md" || pt.DocID != "memory/travelya/deploy-log" {
+		t.Errorf("promoted fields not populated: %+v", pt)
+	}
+}

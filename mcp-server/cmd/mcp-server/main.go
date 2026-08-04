@@ -195,8 +195,9 @@ type ProjectIDInput struct {
 }
 
 type ListPointsInput struct {
-	ProjectID  string `json:"project_id" jsonschema:"Project identifier"`
-	SourceFile string `json:"source_file" jsonschema:"Optional: only list chunks from this source file"`
+	ProjectID  string            `json:"project_id" jsonschema:"Project identifier"`
+	SourceFile string            `json:"source_file" jsonschema:"Optional: only list chunks from this source file"`
+	Filter     map[string]string `json:"filter" jsonschema:"Optional exact-match metadata filter, e.g. {\"bucket\":\"trackstat\"} or {\"kind\":\"ref\"}. Combined with source_file when both are given."`
 }
 
 type DeletePointsInput struct {
@@ -383,7 +384,19 @@ func registerMCPTools(server *mcp.Server, svc *core.Service) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return nil, map[string]any{"context": context, "chunks": chunks}, nil
+		// "context" already carries every chunk's text with its score, so the
+		// chunk list is returned as references only (id, score, metadata).
+		// Echoing Content here too would send the same text twice in one
+		// response — the caller pays for it in tokens and gains nothing.
+		refs := make([]map[string]any, 0, len(chunks))
+		for _, c := range chunks {
+			refs = append(refs, map[string]any{
+				"id":    c.ID,
+				"score": c.Score,
+				"meta":  c.Meta,
+			})
+		}
+		return nil, map[string]any{"context": context, "chunks": refs}, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -432,9 +445,12 @@ func registerMCPTools(server *mcp.Server, svc *core.Service) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "rag_list_points",
-		Description: "List indexed chunks in a project (id, source file, content preview), optionally filtered by source file. Use to inspect what is stored.",
+		Description: "List indexed chunks in a project (id, source file, content preview, metadata), optionally filtered by source file and/or an exact-match metadata filter. Use to inspect or enumerate what is stored — including agent memory tagged with bucket/kind/ts.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in ListPointsInput) (*mcp.CallToolResult, any, error) {
 		filter := map[string]string{}
+		for k, v := range in.Filter {
+			filter[k] = v
+		}
 		if in.SourceFile != "" {
 			filter["source_file"] = in.SourceFile
 		}

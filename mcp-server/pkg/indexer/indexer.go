@@ -32,20 +32,20 @@ func NewIndexer(provider rag.Provider, chunkSize int) *Indexer {
 
 // Default ignore directories.
 var defaultIgnores = map[string]bool{
-	"node_modules": true,
-	".git":         true,
-	"vendor":       true,
-	"dist":         true,
-	"build":        true,
-	".next":        true,
-	".nuxt":        true,
-	"__pycache__":  true,
-	".cache":       true,
-	"target":       true,
-	".idea":        true,
-	".vscode":      true,
-	".DS_Store":    true,
-	"coverage":     true,
+	"node_modules":  true,
+	".git":          true,
+	"vendor":        true,
+	"dist":          true,
+	"build":         true,
+	".next":         true,
+	".nuxt":         true,
+	"__pycache__":   true,
+	".cache":        true,
+	"target":        true,
+	".idea":         true,
+	".vscode":       true,
+	".DS_Store":     true,
+	"coverage":      true,
 	".pytest_cache": true,
 }
 
@@ -101,6 +101,12 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 		}
 		// Skip binary/irrelevant files
 		if !isIndexable(d.Name()) {
+			return nil
+		}
+		// Never index files that commonly carry secrets, even if their
+		// extension looks indexable (e.g. a config.json holding API keys).
+		// Prevents leaking credentials to the external embedding API.
+		if isSensitive(d.Name()) {
 			return nil
 		}
 
@@ -272,7 +278,7 @@ func isIndexable(name string) bool {
 		".sql": true, ".sh": true, ".bash": true, ".zsh": true,
 		".yml": true, ".yaml": true, ".toml": true, ".json": true,
 		".xml": true, ".html": true, ".css": true, ".scss": true,
-		".md": true, ".txt": true, ".env": true, ".cfg": true,
+		".md": true, ".txt": true, ".cfg": true,
 		".ini": true, ".conf": true, ".dockerfile": true,
 		".proto": true, ".graphql": true, ".gql": true,
 	}
@@ -284,5 +290,41 @@ func isIndexable(name string) bool {
 	if nameLower == "dockerfile" || nameLower == "makefile" || nameLower == "license" || nameLower == ".gitignore" {
 		return true
 	}
+	return false
+}
+
+// isSensitive returns true for files that commonly hold secrets and must never
+// be embedded or sent to an external embedding API, regardless of extension.
+func isSensitive(name string) bool {
+	n := strings.ToLower(name)
+
+	// Env files: .env, .env.local, .env.production, foo.env, etc.
+	if n == ".env" || strings.HasPrefix(n, ".env.") || strings.HasSuffix(n, ".env") {
+		return true
+	}
+
+	// Well-known credential/secret filenames.
+	sensitiveNames := map[string]bool{
+		".npmrc": true, ".pypirc": true, ".netrc": true, ".htpasswd": true,
+		".pgpass": true, "credentials": true, "id_rsa": true, "id_dsa": true,
+		"id_ecdsa": true, "id_ed25519": true,
+	}
+	if sensitiveNames[n] {
+		return true
+	}
+
+	// Substring signals in the filename.
+	for _, s := range []string{"secret", "credential", "password"} {
+		if strings.Contains(n, s) {
+			return true
+		}
+	}
+
+	// Key / certificate / keystore extensions.
+	switch strings.ToLower(filepath.Ext(n)) {
+	case ".key", ".pem", ".pfx", ".p12", ".ppk", ".keystore", ".jks", ".asc", ".gpg":
+		return true
+	}
+
 	return false
 }

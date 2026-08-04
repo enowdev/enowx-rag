@@ -74,11 +74,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `hybrid`/`rerank`/`recall`/`compress` (hybrid & rerank default on).
 - Dashboard shows only real, backend-sourced data — removed all mock/hardcoded
   metrics, dead controls, and the fake auto-setup simulation.
+- **Breaking:** `rag_retrieve_context` returns `chunks` as references
+  (`id`, `score`, `meta`) instead of full chunk objects. The document text was
+  previously present three times in one response — in `context`, in
+  `chunks[].Content`, and again in `chunks[].Meta["content"]`. The `context`
+  string already carries every chunk's text with its score, so callers should
+  read it from there.
+- Search results and exported documents no longer repeat the document text
+  under `Meta["content"]`; it is returned once, in the content field.
+- `rag_list_points` accepts an exact-match `filter` on any metadata key (not
+  just `source_file`), and `PointInfo` now carries the remaining payload tags
+  in `meta` — needed when a collection holds agent memory tagged with
+  `bucket`/`kind`/`ts` rather than a code index.
 
 ### Security
 - `/api/setup/apply` and `/api/setup/test` require localhost or a valid admin
   token; `/api/setup/apply` no longer echoes the saved config (API key) back.
 - Removed the deprecated `middleware.RealIP` (X-Forwarded-For spoofing risk).
+- `rag_index_project` no longer embeds `.env` files. `.env` was in the
+  indexable-extension allowlist, so a scanned project's `.env` (and any
+  `*.env`) was read and sent to the configured embedding provider, then
+  persisted in the vector store. Sibling forms (`.env.local`,
+  `.env.production`) were already skipped. A second `isSensitive()` gate now
+  also blocks names that are otherwise indexable — `secrets.json`,
+  `db_password.yml`, `credentials.yaml` — plus key material, so the guarantee
+  no longer depends on the extension allowlist never growing.
 
 ### Notes
 - The Chroma provider is **experimental** (legacy `/api/v1`, mock-tested only);

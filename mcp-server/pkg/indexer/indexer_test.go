@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 
@@ -390,5 +391,83 @@ func TestIndexerListPointsErrorProceedsWithoutSkip(t *testing.T) {
 	}
 	if result.Indexed == 0 {
 		t.Error("expected chunks to be indexed even when ListPoints fails")
+	}
+}
+
+// TestIsSensitive verifies the predicate that keeps credential-bearing files
+// out of the embedding pipeline.
+func TestIsSensitive(t *testing.T) {
+	sensitive := []string{
+		".env", ".env.local", ".env.production", "prod.env",
+		".npmrc", ".pypirc", ".netrc", ".htpasswd", ".pgpass",
+		"credentials", "id_rsa", "id_ed25519",
+		"my-secret.json", "db_password.yaml", "aws-credentials.txt",
+		"server.key", "cert.pem", "bundle.pfx", "store.jks", "sig.asc",
+		".ENV", "ID_RSA", "My-Secret.JSON",
+		// Deliberate over-inclusion: the substring match also catches names that
+		// merely mention a secret. Skipping a doc beats embedding a credential.
+		"passwordless-auth.md",
+	}
+	for _, name := range sensitive {
+		if !isSensitive(name) {
+			t.Errorf("isSensitive(%q) = false, want true", name)
+		}
+	}
+
+	safe := []string{
+		"main.go", "README.md", "config.json", "docker-compose.yml",
+		"environment.ts", "keyboard.go",
+		"Makefile", "index.html",
+	}
+	for _, name := range safe {
+		if isSensitive(name) {
+			t.Errorf("isSensitive(%q) = true, want false", name)
+		}
+	}
+}
+
+// TestIndexerSkipsSensitiveFiles is the regression guard that matters: secrets
+// on disk must never reach the provider, because Index() ships content to an
+// external embedding API.
+func TestIndexerSkipsSensitiveFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	const secret = "RAG_VOYAGE_API_KEY=pa-do-not-embed-me"
+	files := map[string]string{
+		".env":            secret,
+		".env.local":      secret,
+		"credentials":     secret,
+		"id_rsa":          secret,
+		"api-secret.json": secret,
+		"server.key":      secret,
+		"main.go":         "package main\n",
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	provider := &mockProvider{}
+	idx := NewIndexer(provider, 1000)
+
+	result, err := idx.IndexProject(context.Background(), "testproj", dir)
+	if err != nil {
+		t.Fatalf("IndexProject: %v", err)
+	}
+
+	docs := provider.getIndexedDocs()
+	for _, d := range docs {
+		if strings.Contains(d.Content, secret) {
+			t.Fatalf("secret leaked into embedded content: doc %q", d.ID)
+		}
+		if sf := d.Meta["source_file"]; isSensitive(sf) {
+			t.Errorf("sensitive file %q was indexed", sf)
+		}
+	}
+
+	// Only main.go should have been scanned.
+	if result.FilesScanned != 1 {
+		t.Errorf("FilesScanned = %d, want 1 (only main.go)", result.FilesScanned)
 	}
 }
