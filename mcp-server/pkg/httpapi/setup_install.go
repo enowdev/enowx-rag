@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/enowdev/enowx-rag/pkg/config"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/config"
 )
 
 // mcpServerEntry builds the command + env for the enowx-rag MCP server from the

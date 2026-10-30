@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // Spec fully describes one provider + embedder to build.

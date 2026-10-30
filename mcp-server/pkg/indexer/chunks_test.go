@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // Code is cut at its declarations, each chunk knowing its lines and the

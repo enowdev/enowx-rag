@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // fakeProvider is a minimal in-memory rag.Provider for migration tests. As a

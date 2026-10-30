@@ -12,13 +12,13 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/enowdev/enowx-rag/pkg/config"
-	"github.com/enowdev/enowx-rag/pkg/core"
-	"github.com/enowdev/enowx-rag/pkg/httpapi"
-	"github.com/enowdev/enowx-rag/pkg/indexer"
-	"github.com/enowdev/enowx-rag/pkg/rag"
-	"github.com/enowdev/enowx-rag/pkg/ragbuild"
-	"github.com/enowdev/enowx-rag/web"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/config"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/core"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/httpapi"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/indexer"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/ragbuild"
+	"github.com/enowdev/enowx-rag/mcp-server/web"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // Indexer scans a project directory and syncs its contents to RAG.

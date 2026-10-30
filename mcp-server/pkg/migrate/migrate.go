@@ -9,7 +9,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // Progress reports migration advancement. Total is the number of documents to

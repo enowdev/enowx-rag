@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cloud or API token.
 
 ### Changed
+- The Go module is `github.com/enowdev/enowx-rag/mcp-server`, as its folder
+  says, so `go install …/mcp-server/cmd/mcp-server@latest` and importing its
+  packages from another program work.
 - A git repository is indexed from `git ls-files` (tracked and untracked,
   `.gitignore` honored) instead of a walk with a fixed ignore list.
 - **One-line install + prebuilt binaries**: releases now ship cross-compiled,

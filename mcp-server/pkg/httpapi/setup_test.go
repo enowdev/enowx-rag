@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/enowdev/enowx-rag/pkg/core"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/core"
 )
 
 // helperClearRagEnv unsets all RAG_ env vars that could interfere with

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // mockProvider captures documents passed to Index and tracks embed calls.

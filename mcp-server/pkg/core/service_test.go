@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // --- Mock Provider ---

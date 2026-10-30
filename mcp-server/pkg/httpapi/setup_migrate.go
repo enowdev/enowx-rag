@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/enowdev/enowx-rag/pkg/core"
-	"github.com/enowdev/enowx-rag/pkg/migrate"
-	"github.com/enowdev/enowx-rag/pkg/migrate/cloud"
-	"github.com/enowdev/enowx-rag/pkg/rag"
-	"github.com/enowdev/enowx-rag/pkg/ragbuild"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/core"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/migrate"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/migrate/cloud"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/ragbuild"
 )
 
 // migrateRequest describes a re-embed / move migration. The source is a project

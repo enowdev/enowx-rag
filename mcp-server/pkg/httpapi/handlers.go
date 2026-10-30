@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/enowdev/enowx-rag/pkg/core"
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/core"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 	"github.com/go-chi/chi/v5"
 )
 

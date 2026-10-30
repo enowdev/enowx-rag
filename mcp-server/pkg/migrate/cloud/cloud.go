@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // Source identifies an external vector DB and where to read text from.
