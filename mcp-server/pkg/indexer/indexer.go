@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,13 +11,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // Indexer scans a project directory and syncs its contents to RAG.
 type Indexer struct {
 	provider  rag.Provider
 	chunkSize int
+	// Files, when set, lists the files to index in a folder (relative,
+	// with slashes) in place of git's (or, outside a repository, a walk).
+	Files func(root string) ([]string, error)
 }
 
 // NewIndexer creates an indexer with the given provider.
@@ -32,20 +36,20 @@ func NewIndexer(provider rag.Provider, chunkSize int) *Indexer {
 
 // Default ignore directories.
 var defaultIgnores = map[string]bool{
-	"node_modules": true,
-	".git":         true,
-	"vendor":       true,
-	"dist":         true,
-	"build":        true,
-	".next":        true,
-	".nuxt":        true,
-	"__pycache__":  true,
-	".cache":       true,
-	"target":       true,
-	".idea":        true,
-	".vscode":      true,
-	".DS_Store":    true,
-	"coverage":     true,
+	"node_modules":  true,
+	".git":          true,
+	"vendor":        true,
+	"dist":          true,
+	"build":         true,
+	".next":         true,
+	".nuxt":         true,
+	"__pycache__":   true,
+	".cache":        true,
+	"target":        true,
+	".idea":         true,
+	".vscode":       true,
+	".DS_Store":     true,
+	"coverage":      true,
 	".pytest_cache": true,
 }
 
@@ -83,68 +87,58 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 		}
 	}
 
-	// Walk the directory and collect files.
+	// The files: the caller's, else git's (its ignores honored), else a
+	// walk; never one that holds secrets.
 	var docs []rag.Document
 	var currentFiles []string
 	skipped := 0
-
-	err = filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil // skip errors
+	files, err := idx.listFiles(rootDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, relPath := range files {
+		if IsSecret(relPath) || !isIndexable(filepath.Base(relPath)) {
+			continue
 		}
-		if d.IsDir() {
-			name := d.Name()
-			if defaultIgnores[name] {
-				return filepath.SkipDir
-			}
-			return nil
+		path := filepath.Join(rootDir, filepath.FromSlash(relPath))
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() || info.Size() == 0 || info.Size() > 500*1024 {
+			continue
 		}
-		// Skip binary/irrelevant files
-		if !isIndexable(d.Name()) {
-			return nil
-		}
-
-		relPath, err := filepath.Rel(rootDir, path)
-		if err != nil {
-			return nil
-		}
-		relPath = filepath.ToSlash(relPath)
 		currentFiles = append(currentFiles, relPath)
-
 		content, err := os.ReadFile(path)
-		if err != nil {
-			return nil
+		if err != nil || bytes.IndexByte(content, 0) >= 0 {
+			continue // unreadable, or binary
 		}
-		// Skip empty or very large files (>500KB)
-		if len(content) == 0 || len(content) > 500*1024 {
-			return nil
-		}
-
-		chunks := chunkText(string(content), idx.chunkSize)
-		for i, chunk := range chunks {
+		for i, ch := range chunkCode(string(content), relPath, idx.chunkSize) {
+			if secretText.MatchString(ch.Text) {
+				continue // a key in the code: never sent to an embedder
+			}
 			docID := fmt.Sprintf("%s/%s#chunk%d", sourceDir, relPath, i)
-			contentHash := computeContentHash(chunk)
-			// Skip re-embedding if the content_hash matches an existing point
+			contentHash := computeContentHash(ch.Text)
 			if existingHash, ok := existingHashes[docID]; ok && existingHash == contentHash {
 				skipped++
 				continue
 			}
+			head := fmt.Sprintf("File: %s:%d-%d", relPath, ch.Start, ch.End)
+			if ch.Symbol != "" {
+				head += " (" + ch.Symbol + ")"
+			}
 			docs = append(docs, rag.Document{
 				ID:      docID,
-				Content: fmt.Sprintf("File: %s\n\n%s", relPath, chunk),
+				Content: head + "\n\n" + ch.Text,
 				Meta: map[string]string{
 					"source_file":   relPath,
 					"source_dir":    sourceDir,
 					"chunk_index":   fmt.Sprintf("%d", i),
 					"content_hash":  contentHash,
-					"chunk_version": "v2",
+					"chunk_version": "v3",
+					"start_line":    fmt.Sprintf("%d", ch.Start),
+					"end_line":      fmt.Sprintf("%d", ch.End),
+					"symbol":        ch.Symbol,
 				},
 			})
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 
 	// Index new/changed documents.
@@ -179,6 +173,33 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 		FilesScanned: len(currentFiles),
 		Skipped:      skipped,
 	}, nil
+}
+
+// listFiles are the files of rootDir to look at, relative with slashes.
+func (idx *Indexer) listFiles(rootDir string) ([]string, error) {
+	if idx.Files != nil {
+		return idx.Files(rootDir)
+	}
+	if files, ok := gitFiles(rootDir); ok {
+		return files, nil
+	}
+	var files []string
+	err := filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip errors
+		}
+		if d.IsDir() {
+			if defaultIgnores[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if rel, err := filepath.Rel(rootDir, path); err == nil {
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	return files, err
 }
 
 // SyncResult holds stats from a project sync.
@@ -272,7 +293,7 @@ func isIndexable(name string) bool {
 		".sql": true, ".sh": true, ".bash": true, ".zsh": true,
 		".yml": true, ".yaml": true, ".toml": true, ".json": true,
 		".xml": true, ".html": true, ".css": true, ".scss": true,
-		".md": true, ".txt": true, ".env": true, ".cfg": true,
+		".md": true, ".txt": true, ".cfg": true,
 		".ini": true, ".conf": true, ".dockerfile": true,
 		".proto": true, ".graphql": true, ".gql": true,
 	}

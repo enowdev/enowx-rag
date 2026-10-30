@@ -12,13 +12,13 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/enowdev/enowx-rag/pkg/config"
-	"github.com/enowdev/enowx-rag/pkg/core"
-	"github.com/enowdev/enowx-rag/pkg/httpapi"
-	"github.com/enowdev/enowx-rag/pkg/indexer"
-	"github.com/enowdev/enowx-rag/pkg/rag"
-	"github.com/enowdev/enowx-rag/pkg/ragbuild"
-	"github.com/enowdev/enowx-rag/web"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/config"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/core"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/httpapi"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/indexer"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/ragbuild"
+	"github.com/enowdev/enowx-rag/mcp-server/web"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -57,6 +57,7 @@ type RuntimeConfig struct {
 	QdrantAPIKey  string
 	ChromaURL     string
 	PGVectorDSN   string
+	SQLitePath    string
 	TEIBaseURL    string
 	VoyageAPIKey  string
 	VoyageModel   string
@@ -84,6 +85,7 @@ func resolveConfig() (*RuntimeConfig, error) {
 		QdrantAPIKey:  cfg.QdrantAPIKey,
 		ChromaURL:     cfg.ChromaURL,
 		PGVectorDSN:   cfg.PGVectorDSN,
+		SQLitePath:    cfg.StorePath(),
 		TEIBaseURL:    cfg.TEIURL,
 		VoyageAPIKey:  cfg.Voyage.APIKey,
 		VoyageModel:   cfg.Voyage.Model,
@@ -112,6 +114,7 @@ func buildProvider(ctx context.Context, cfg *RuntimeConfig) (rag.Provider, error
 		QdrantAPIKey:  cfg.QdrantAPIKey,
 		ChromaURL:     cfg.ChromaURL,
 		PGVectorDSN:   cfg.PGVectorDSN,
+		SQLitePath:    cfg.SQLitePath,
 		VoyageAPIKey:  cfg.VoyageAPIKey,
 		VoyageModel:   cfg.VoyageModel,
 		VoyageDim:     cfg.VectorDim,

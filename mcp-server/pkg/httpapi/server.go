@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/enowdev/enowx-rag/pkg/core"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/core"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )

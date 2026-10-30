@@ -1,4 +1,4 @@
-module github.com/enowdev/enowx-rag
+module github.com/enowdev/enowx-rag/mcp-server
 
 go 1.26
 

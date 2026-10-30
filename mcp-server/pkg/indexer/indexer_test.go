@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // mockProvider captures documents passed to Index and tracks embed calls.
@@ -173,8 +173,8 @@ func TestIndexerAddsChunkVersion(t *testing.T) {
 			t.Errorf("doc %d: chunk_version not in metadata", i)
 			continue
 		}
-		if version != "v2" {
-			t.Errorf("doc %d: chunk_version = %q, want %q", i, version, "v2")
+		if version != "v3" {
+			t.Errorf("doc %d: chunk_version = %q, want %q", i, version, "v3")
 		}
 	}
 }

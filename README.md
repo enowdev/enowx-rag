@@ -55,7 +55,7 @@ without you re-explaining them every time.
 - **Persistent memory, durable metrics.** Design decisions and facts survive
   across sessions and restarts; query latency (p50/p95), token usage, and
   retrieval breakdown are persisted to a local SQLite DB (pure-Go, no cgo).
-- **Bring your own stack.** Vector stores: **Qdrant, pgvector, Chroma**.
+- **Bring your own stack.** Vector stores: **a built-in SQLite file** (nothing to install), **Qdrant, pgvector, Chroma**.
   Embedders: **Voyage AI, any OpenAI-compatible `/v1/embeddings` API, or
   self-hosted TEI**. Swap models or move stores later with the built-in
   **Migration** tool (re-embeds stored text — no re-scraping your codebase).

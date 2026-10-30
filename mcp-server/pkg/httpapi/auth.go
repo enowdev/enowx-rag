@@ -5,7 +5,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/enowdev/enowx-rag/pkg/config"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/config"
 )
 
 // AdminTokenMiddleware returns an HTTP middleware that protects /api/* and /mcp

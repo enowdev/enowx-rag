@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/enowdev/enowx-rag/pkg/core"
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/core"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // realHome is the developer's HOME captured before any test mutates the env.

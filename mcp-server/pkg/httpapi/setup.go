@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/enowdev/enowx-rag/pkg/config"
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/config"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // --- Request / response types for setup wizard endpoints ---

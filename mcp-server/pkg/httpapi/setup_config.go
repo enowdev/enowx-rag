@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/enowdev/enowx-rag/pkg/config"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/config"
 )
 
 // maskSecret returns a masked view of a secret: first 4 + last 3 chars, middle

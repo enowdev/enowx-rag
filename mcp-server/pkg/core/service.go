@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/enowdev/enowx-rag/pkg/indexer"
-	"github.com/enowdev/enowx-rag/pkg/rag"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/indexer"
+	"github.com/enowdev/enowx-rag/mcp-server/pkg/rag"
 )
 
 // DefaultK is the default number of final results returned by Search.
