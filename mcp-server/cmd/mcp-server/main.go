@@ -57,6 +57,7 @@ type RuntimeConfig struct {
 	QdrantAPIKey  string
 	ChromaURL     string
 	PGVectorDSN   string
+	SQLitePath    string
 	TEIBaseURL    string
 	VoyageAPIKey  string
 	VoyageModel   string
@@ -84,6 +85,7 @@ func resolveConfig() (*RuntimeConfig, error) {
 		QdrantAPIKey:  cfg.QdrantAPIKey,
 		ChromaURL:     cfg.ChromaURL,
 		PGVectorDSN:   cfg.PGVectorDSN,
+		SQLitePath:    cfg.StorePath(),
 		TEIBaseURL:    cfg.TEIURL,
 		VoyageAPIKey:  cfg.Voyage.APIKey,
 		VoyageModel:   cfg.Voyage.Model,
@@ -112,6 +114,7 @@ func buildProvider(ctx context.Context, cfg *RuntimeConfig) (rag.Provider, error
 		QdrantAPIKey:  cfg.QdrantAPIKey,
 		ChromaURL:     cfg.ChromaURL,
 		PGVectorDSN:   cfg.PGVectorDSN,
+		SQLitePath:    cfg.SQLitePath,
 		VoyageAPIKey:  cfg.VoyageAPIKey,
 		VoyageModel:   cfg.VoyageModel,
 		VoyageDim:     cfg.VectorDim,

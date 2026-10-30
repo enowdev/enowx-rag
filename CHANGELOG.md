@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Built-in store (`vector_store: sqlite`)**: one SQLite file (pure Go, no
+  cgo; `sqlite_path`, default `~/.enowx-rag/rag.db`, or `RAG_SQLITE_PATH`),
+  vectors searched by cosine, text in FTS5 for hybrid search (RRF), so
+  enowx-rag runs with nothing else to install. Fits projects of up to a few
+  hundred thousand chunks.
+- **Chunks cut by code structure**: at top-level declarations (Go, Python,
+  JS/TS, Rust, Java/Kotlin/Swift/C#/PHP, Ruby, Markdown headings, SQL,
+  protobuf), the comments above each kept with it, small ones packed
+  together; each chunk carries `start_line`, `end_line` and `symbol`, and
+  starts `File: path:start-end (symbol)` (`chunk_version` v3, so existing
+  indexes re-embed once).
+- `Indexer.Files` lets a program embedding enowx-rag pass the files to index.
+
+### Security
+- Secrets are never indexed: `.env*`, keys and certificates, `credentials`
+  and `*secret*` files by name, and any chunk holding a private key block or a
+  cloud or API token.
+
+### Changed
+- A git repository is indexed from `git ls-files` (tracked and untracked,
+  `.gitignore` honored) instead of a walk with a fixed ignore list.
 - **One-line install + prebuilt binaries**: releases now ship cross-compiled,
   CGO-free binaries for macOS/Linux (amd64/arm64) and Windows (amd64) via
   GoReleaser (`.github/workflows/release.yml` on tag `v*`). Install without a

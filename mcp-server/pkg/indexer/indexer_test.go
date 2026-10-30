@@ -173,8 +173,8 @@ func TestIndexerAddsChunkVersion(t *testing.T) {
 			t.Errorf("doc %d: chunk_version not in metadata", i)
 			continue
 		}
-		if version != "v2" {
-			t.Errorf("doc %d: chunk_version = %q, want %q", i, version, "v2")
+		if version != "v3" {
+			t.Errorf("doc %d: chunk_version = %q, want %q", i, version, "v3")
 		}
 	}
 }

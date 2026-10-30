@@ -36,16 +36,19 @@ type OpenAIConfig struct {
 // Config holds all configurable settings for the RAG server. Fields use
 // yaml struct tags so the struct can be marshalled/unmarshalled directly.
 type Config struct {
-	VectorStore   string       `yaml:"vector_store"`
-	Embedder      string       `yaml:"embedder"`
-	Voyage        VoyageConfig `yaml:"voyage"`
-	OpenAI        OpenAIConfig `yaml:"openai"`
-	PGVectorDSN   string       `yaml:"pgvector_dsn"`
-	QdrantURL     string       `yaml:"qdrant_url"`
-	QdrantAPIKey  string       `yaml:"qdrant_api_key"`
-	ChromaURL     string       `yaml:"chroma_url"`
-	TEIURL        string       `yaml:"tei_url"`
-	RerankerModel string       `yaml:"reranker_model"`
+	VectorStore string       `yaml:"vector_store"`
+	Embedder    string       `yaml:"embedder"`
+	Voyage      VoyageConfig `yaml:"voyage"`
+	OpenAI      OpenAIConfig `yaml:"openai"`
+	PGVectorDSN string       `yaml:"pgvector_dsn"`
+	// SQLitePath is the built-in store's file (vector_store: sqlite);
+	// empty means ~/.enowx-rag/rag.db.
+	SQLitePath    string `yaml:"sqlite_path,omitempty"`
+	QdrantURL     string `yaml:"qdrant_url"`
+	QdrantAPIKey  string `yaml:"qdrant_api_key"`
+	ChromaURL     string `yaml:"chroma_url"`
+	TEIURL        string `yaml:"tei_url"`
+	RerankerModel string `yaml:"reranker_model"`
 	// AdminToken, when set, gates /api and /mcp with a bearer token. The env var
 	// RAG_ADMIN_TOKEN takes precedence over this file value (see EffectiveAdminToken).
 	AdminToken string `yaml:"admin_token,omitempty"`
@@ -89,6 +92,14 @@ func Path() string {
 		return filepath.Join(".enowx-rag", "config.yaml")
 	}
 	return filepath.Join(home, ".enowx-rag", "config.yaml")
+}
+
+// StorePath is the built-in store's file: cfg's, else ~/.enowx-rag/rag.db.
+func (cfg *Config) StorePath() string {
+	if cfg.SQLitePath != "" {
+		return cfg.SQLitePath
+	}
+	return filepath.Join(filepath.Dir(Path()), "rag.db")
 }
 
 // MetricsDBPath returns the absolute path to the durable metrics database:
@@ -191,6 +202,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("RAG_PGVECTOR_DSN"); v != "" {
 		cfg.PGVectorDSN = v
+	}
+	if v := os.Getenv("RAG_SQLITE_PATH"); v != "" {
+		cfg.SQLitePath = v
 	}
 	if v := os.Getenv("RAG_TEI_URL"); v != "" {
 		cfg.TEIURL = v

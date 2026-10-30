@@ -15,15 +15,16 @@ import (
 
 // Spec fully describes one provider + embedder to build.
 type Spec struct {
-	VectorStore string // "qdrant" | "chroma" | "pgvector"
+	VectorStore string // "sqlite" | "qdrant" | "chroma" | "pgvector"
 	Embedder    string // "voyage" | "openai" | "tei"
 
 	// Vector store connection.
-	QdrantURL    string
-	QdrantAPIKey string
-	ChromaURL    string
-	PGVectorDSN  string
+	QdrantURL     string
+	QdrantAPIKey  string
+	ChromaURL     string
+	PGVectorDSN   string
 	PGVectorTable string // pgvector table name; defaults to "project_memory"
+	SQLitePath    string // the built-in store's file
 
 	// Embedder settings.
 	VoyageAPIKey  string
@@ -64,6 +65,11 @@ func BuildProvider(ctx context.Context, spec Spec) (rag.Provider, error) {
 		return nil, err
 	}
 	switch strings.ToLower(spec.VectorStore) {
+	case "sqlite":
+		if spec.SQLitePath == "" {
+			return nil, fmt.Errorf("sqlite_path is required for the sqlite store")
+		}
+		return rag.NewSQLiteProvider(spec.SQLitePath, embedder)
 	case "qdrant":
 		return rag.NewQdrantProvider(ctx, spec.QdrantURL, spec.QdrantAPIKey, embedder)
 	case "chroma":
