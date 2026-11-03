@@ -140,6 +140,47 @@ ON CONFLICT(project, id) DO UPDATE SET content = excluded.content, meta = exclud
 	return nil
 }
 
+// UpdatePayload rewrites the content and metadata of existing points, keeping
+// their vectors (see PayloadUpdater). The full-text index is refreshed too.
+func (p *SQLiteProvider) UpdatePayload(ctx context.Context, projectID string, docs []Document) error {
+	if len(docs) == 0 {
+		return nil
+	}
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, d := range docs {
+		var raw string
+		err := tx.QueryRowContext(ctx, `SELECT meta FROM points WHERE project = ? AND id = ?`, projectID, d.ID).Scan(&raw)
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("update payload: point %q not found", d.ID)
+		}
+		if err != nil {
+			return err
+		}
+		meta := map[string]string{}
+		_ = json.Unmarshal([]byte(raw), &meta)
+		for k, v := range d.Meta {
+			meta[k] = v
+		}
+		merged, _ := json.Marshal(meta)
+		if _, err := tx.ExecContext(ctx, `UPDATE points SET content = ?, meta = ? WHERE project = ? AND id = ?`,
+			d.Content, string(merged), projectID, d.ID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM points_fts WHERE project = ? AND id = ?`, projectID, d.ID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO points_fts(content, project, id) VALUES (?, ?, ?)`, d.Content, projectID, d.ID); err != nil {
+			return err
+		}
+	}
+	// Vectors are untouched, so the cached vectors stay valid.
+	return tx.Commit()
+}
+
 // vectors are project's points' vectors, normalized, read once.
 func (p *SQLiteProvider) vectors(ctx context.Context, projectID string) ([]cached, error) {
 	p.mu.Lock()

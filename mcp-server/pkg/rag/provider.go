@@ -100,6 +100,18 @@ type HybridSearcher interface {
 	SemanticSearchHybrid(ctx context.Context, projectID, query string, limit int) ([]Result, error)
 }
 
+// PayloadUpdater is an optional interface for providers that can rewrite the
+// content and metadata of existing points while keeping their vectors. The
+// indexer uses it when a chunk's code is unchanged but its location moved
+// (e.g. a function was inserted above it, so its line numbers shifted): the
+// stored header and line metadata are refreshed without paying to re-embed.
+// Each Document's ID must name an existing point; Meta is merged over the
+// stored metadata. Providers that do not implement it get those chunks
+// re-indexed (re-embedded) instead, which is correct but costs embeddings.
+type PayloadUpdater interface {
+	UpdatePayload(ctx context.Context, projectID string, docs []Document) error
+}
+
 // RerankHit is a single reranked result: the Index of the original document
 // in the input slice and its relevance Score from the reranker.
 type RerankHit struct {

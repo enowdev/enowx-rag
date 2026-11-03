@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Auto-sync before search**: a directory indexed once with
+  `rag_index_project` is recorded (`~/.enowx-rag/project_dirs.json`) and
+  re-synced incrementally before a search when its index is older than
+  `RAG_AUTO_SYNC_INTERVAL` (default `60s`, `off` disables). Agents no longer
+  need to call `rag_index_project` after every task; the agent templates say
+  so. A recorded directory that no longer exists is skipped, not synced, and
+  a project deleted elsewhere is not recreated. The registry file is shared
+  safely by several processes (re-read before every read and change).
+- **Big classes split at their methods**: a declaration too long for one
+  chunk is cut at its members (Python, Rust, Ruby, Java/C#, Kotlin, Swift,
+  PHP, JS/TS class methods; decorators and annotations kept with their
+  method, closures kept inside it), each chunk's symbol `Class.method`,
+  before falling back to blank lines.
+- `rag.PayloadUpdater` (implemented by the SQLite store): rewrites a point's
+  content and metadata, keeping its vector.
 - **Built-in store (`vector_store: sqlite`)**: one SQLite file (pure Go, no
   cgo; `sqlite_path`, default `~/.enowx-rag/rag.db`, or `RAG_SQLITE_PATH`),
   vectors searched by cosine, text in FTS5 for hybrid search (RRF), so
@@ -20,6 +35,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   starts `File: path:start-end (symbol)` (`chunk_version` v3, so existing
   indexes re-embed once).
 - `Indexer.Files` lets a program embedding enowx-rag pass the files to index.
+
+### Fixed
+- **Stale chunks after editing a file**: a sync deleted chunks only when
+  their file was gone, so code removed from a file that still exists stayed
+  in the index and was served as current. A sync now deletes every chunk of
+  the directory it did not produce again (also replacing chunks written by
+  older chunk layouts).
+- **Re-embedding everything below an edit**: chunk IDs were their position
+  in the file (`#chunkN`), so adding a function shifted the IDs of all the
+  chunks after it. IDs are now derived from the chunk's content
+  (`dir/file#<hash>`, `chunk_version` v4; existing indexes re-embed once);
+  only small declarations are packed together, so an edit changes only the
+  chunks around it; a chunk that only moved gets its line numbers refreshed
+  without re-embedding where the store supports it (SQLite), re-indexed
+  otherwise.
+- `rag_index_project` on a directory that does not exist is an error instead
+  of an empty scan that deleted everything indexed from it.
+- A sync only ever deletes chunks under its own directory's ID prefix, even
+  when the store returns other points from `ListPoints` (pgvector ignores the
+  `source_dir` filter, so syncing one directory deleted another's chunks).
+- Indexing a second directory with the same folder name as one already in
+  the project (`/x/app`, `/y/app`) is refused instead of silently replacing
+  its chunks.
+- A file that exists but can't be read keeps its chunks instead of losing
+  them to the stale cleanup.
+- **Chroma**: points are written with `/upsert` instead of `/add`, which
+  skipped IDs already stored, so edited chunks were never updated.
 
 ### Security
 - Secrets are never indexed: `.env*`, keys and certificates, `credentials`

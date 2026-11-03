@@ -101,7 +101,9 @@ func (p *ChromaProvider) Index(ctx context.Context, projectID string, docs []Doc
 		"metadatas":  metas,
 		"documents":  texts,
 	}
-	return p.do(ctx, http.MethodPost, "/api/v1/collections/"+name+"/add", body, nil)
+	// upsert, not add: /add silently skips IDs that already exist, so an edited
+	// chunk (same ID, new content) would never be stored.
+	return p.do(ctx, http.MethodPost, "/api/v1/collections/"+name+"/upsert", body, nil)
 }
 
 func (p *ChromaProvider) SemanticSearch(ctx context.Context, projectID, query string, limit int) ([]Result, error) {

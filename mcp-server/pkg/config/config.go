@@ -112,6 +112,13 @@ func MetricsDBPath() string {
 	return filepath.Join(home, ".enowx-rag", "metrics.db")
 }
 
+// ProjectDirsPath is where the directories indexed into each project are
+// recorded for auto-sync (~/.enowx-rag/project_dirs.json), next to the
+// metrics database.
+func ProjectDirsPath() string {
+	return filepath.Join(filepath.Dir(MetricsDBPath()), "project_dirs.json")
+}
+
 // Load reads the config file from Path() and returns a populated *Config.
 // If the file does not exist, Load returns an error (this triggers the
 // onboarding wizard in HTTP mode). Env var overrides are applied on top of

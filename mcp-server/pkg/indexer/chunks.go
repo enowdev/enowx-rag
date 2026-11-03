@@ -43,30 +43,83 @@ var (
 	jsDecl    = regexp.MustCompile(`^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\*?|class|interface|type|enum|const|let)\s+([A-Za-z_$][\w$]*)`)
 	classDecl = regexp.MustCompile(`^(?:(?:public|private|protected|internal|static|final|abstract|open|override|data|sealed|export)\s+)*(?:class|interface|enum|struct|record|fun|func|function|object|protocol|extension)\s+([A-Za-z_]\w*)`)
 	comment   = regexp.MustCompile(`^\s*(?://|#|/\*|\*|--|"""|///)`)
+	// attached are the lines that belong to the declaration below them:
+	// comments, and decorators / annotations (@Override, @property, ...).
+	attached = regexp.MustCompile(`^\s*(?://|#|/\*|\*|--|"""|///|@)`)
 )
 
+// members find, by language, the declarations nested in a type: methods,
+// nested classes. They match indented lines only, so never a top-level
+// declaration. A declaration too long for one chunk (a big class) is split at
+// its members before falling back to blank lines. Languages not listed (Go:
+// its methods are top-level already) fall back to blank lines.
+var members = map[string]*regexp.Regexp{
+	".py":    regexp.MustCompile(`^\s+(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)`),
+	".rs":    regexp.MustCompile(`^\s+(?:pub(?:\([\w:]+\))?\s+)?(?:(?:async|const|unsafe|extern\s+"\w+")\s+)*fn\s+([A-Za-z_]\w*)`),
+	".rb":    regexp.MustCompile(`^\s+def\s+([\w.?!=]+)`),
+	".java":  javaMember,
+	".cs":    javaMember,
+	".kt":    regexp.MustCompile(`^\s+(?:(?:public|private|protected|internal|override|open|abstract|final|suspend|inline|operator|infix|tailrec)\s+)*fun\s+(?:<[^>]*>\s*)?(?:[\w.]+\.)?([A-Za-z_]\w*)`),
+	".swift": regexp.MustCompile(`^\s+(?:(?:public|private|fileprivate|internal|open|static|class|override|final|mutating|nonmutating|@\w+)\s+)*func\s+([A-Za-z_]\w*)`),
+	".php":   regexp.MustCompile(`^\s+(?:(?:public|private|protected|static|final|abstract)\s+)*function\s+&?([A-Za-z_]\w*)`),
+	".js":    jsMember,
+	".jsx":   jsMember,
+	".ts":    jsMember,
+	".tsx":   jsMember,
+}
+
+var (
+	// javaMember: a method or constructor with at least one modifier, so a
+	// call inside a method body ("foo(x);", "return bar(y)") never matches.
+	javaMember = regexp.MustCompile(`^\s+(?:@\w+\s+)*(?:(?:public|private|protected|internal|static|final|abstract|override|virtual|async|synchronized|sealed|partial|extern|unsafe|default)\s+)+(?:<[^>]+>\s+)?(?:[\w<>\[\],.?]+\s+)?([A-Za-z_]\w*)\s*\(`)
+	// jsMember: a class method whose signature fits on its line and opens its
+	// body: "  async load(id: string): Promise<X> {". Control-flow keywords
+	// that look the same ("  if (x) {") are filtered out by notMember.
+	jsMember  = regexp.MustCompile(`^\s+(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set|declare)\s+)*\*?\s*(#?[A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\([^)]*\)\s*(?::\s*[^={;]+)?\{\s*$`)
+	notMember = map[string]bool{"if": true, "for": true, "while": true, "switch": true, "catch": true,
+		"function": true, "return": true, "with": true, "do": true, "else": true, "try": true}
+)
+
+// span is a range of lines (0-based, end excluded) and the symbol it holds.
+type span struct {
+	start, end int
+	symbol     string
+}
+
 // chunkCode cuts file path's text into chunks of at most maxChars, at its
-// top-level declarations (with the comments right above them), several
-// small ones together; a declaration too long is cut at blank lines, then
-// at lines. A language enowX knows no declarations of is cut at blank
-// lines.
+// top-level declarations (with the comments right above them). Small
+// declarations are packed together with the one that follows; a declaration
+// too long is split at its members (methods), then at blank lines, then at
+// lines. A language enowX knows no declarations of is cut at blank lines.
 func chunkCode(text, path string, maxChars int) []Chunk {
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	decl := declarations[strings.ToLower(filepath.Ext(path))]
-	// Segments: line spans starting at a declaration (or a blank line when
-	// the language has none), comments above it pulled in.
-	type seg struct {
-		start, end int // 0-based, end excluded
-		symbol     string
+	ext := strings.ToLower(filepath.Ext(path))
+	member := members[ext]
+	long := func(sg span) []span { return splitLong(lines, sg, maxChars, member) }
+
+	var out []Chunk
+	for _, sp := range pack(lines, segments(lines, declarations[ext]), maxChars, long) {
+		body := strings.Join(lines[sp.start:sp.end], "\n")
+		if strings.TrimSpace(body) == "" {
+			continue
+		}
+		out = append(out, Chunk{Text: body, Start: sp.start + 1, End: sp.end, Symbol: sp.symbol})
 	}
-	var segs []seg
-	cur := seg{}
+	return out
+}
+
+// segments are the line spans starting at a top-level declaration (or at a
+// blank line when the language has no declarations known), the comments
+// above a declaration pulled in.
+func segments(lines []string, decl *regexp.Regexp) []span {
+	var segs []span
+	cur := span{}
 	begin := func(i int, symbol string) {
 		if i > cur.start {
 			cur.end = i
 			segs = append(segs, cur)
 		}
-		cur = seg{start: i, symbol: symbol}
+		cur = span{start: i, symbol: symbol}
 	}
 	for i, line := range lines {
 		if decl != nil {
@@ -82,52 +135,120 @@ func chunkCode(text, path string, maxChars int) []Chunk {
 		}
 	}
 	cur.end = len(lines)
-	segs = append(segs, cur)
+	return append(segs, cur)
+}
 
-	size := func(s, e int) int {
-		n := 0
-		for _, l := range lines[s:e] {
-			n += len(l) + 1
-		}
-		return n
-	}
-	var out []Chunk
-	emit := func(s, e int, symbol string) {
-		body := strings.Join(lines[s:e], "\n")
-		if strings.TrimSpace(body) == "" {
-			return
-		}
-		out = append(out, Chunk{Text: body, Start: s + 1, End: e, Symbol: symbol})
-	}
-	// Pack small segments together; cut long ones.
-	packS, packE, packSym := -1, -1, ""
+// pack groups contiguous segments into chunk spans of at most maxChars: a
+// small segment (under a quarter of the size: an import block, a const, a
+// one-line type) joins the small ones next to it and the segment that
+// follows; a segment of fair size stands alone; one too long goes to long.
+// Packing only small segments keeps boundaries local: adding a function
+// changes the chunks around it, not every chunk after it, so the others keep
+// their content (and their IDs: nothing to re-embed).
+func pack(lines []string, segs []span, maxChars int, long func(span) []span) []span {
+	small := maxChars / 4
+	var out []span
+	cur := span{start: -1}
 	flush := func() {
-		if packS >= 0 {
-			emit(packS, packE, packSym)
-			packS, packE, packSym = -1, -1, ""
+		if cur.start >= 0 {
+			out = append(out, cur)
+			cur = span{start: -1}
 		}
 	}
 	for _, sg := range segs {
-		n := size(sg.start, sg.end)
-		if n > maxChars {
+		n := size(lines[sg.start:sg.end])
+		switch {
+		case n > maxChars:
 			flush()
-			for _, c := range cutLong(lines, sg.start, sg.end, maxChars) {
-				emit(c[0], c[1], sg.symbol)
+			out = append(out, long(sg)...)
+		case n < small:
+			if cur.start >= 0 && size(lines[cur.start:sg.end]) > maxChars {
+				flush()
 			}
-			continue
-		}
-		if packS >= 0 && size(packS, sg.end) > maxChars {
+			if cur.start < 0 {
+				cur = sg
+			} else {
+				cur.end = sg.end
+				if cur.symbol == "" {
+					cur.symbol = sg.symbol
+				}
+			}
+		default:
+			if cur.start >= 0 && size(lines[cur.start:sg.end]) <= maxChars {
+				sym := sg.symbol // the small lead-in joins this declaration
+				if sym == "" {
+					sym = cur.symbol
+				}
+				out = append(out, span{start: cur.start, end: sg.end, symbol: sym})
+				cur = span{start: -1}
+				continue
+			}
 			flush()
+			out = append(out, sg)
 		}
-		if packS < 0 {
-			packS, packSym = sg.start, sg.symbol
-		} else if packSym == "" {
-			packSym = sg.symbol
-		}
-		packE = sg.end
 	}
 	flush()
 	return out
+}
+
+// splitLong splits a segment too long for one chunk at its members (the
+// shallowest ones: a closure inside a method stays in the method), each with
+// the comments and decorators above it, symbol "Outer.member"; pieces are
+// packed like top-level segments, and a piece still too long is cut at blank
+// lines, then at lines.
+func splitLong(lines []string, sg span, maxChars int, member *regexp.Regexp) []span {
+	byBlank := func(p span) []span {
+		var out []span
+		for _, c := range cutLong(lines, p.start, p.end, maxChars) {
+			out = append(out, span{start: c[0], end: c[1], symbol: p.symbol})
+		}
+		return out
+	}
+	if member == nil {
+		return byBlank(sg)
+	}
+	type hit struct {
+		line, indent int
+		name         string
+	}
+	var hits []hit
+	shallowest := -1
+	for i := sg.start + 1; i < sg.end; i++ {
+		m := member.FindStringSubmatch(lines[i])
+		if m == nil || notMember[m[len(m)-1]] {
+			continue
+		}
+		ind := len(lines[i]) - len(strings.TrimLeft(lines[i], " \t"))
+		hits = append(hits, hit{line: i, indent: ind, name: m[len(m)-1]})
+		if shallowest < 0 || ind < shallowest {
+			shallowest = ind
+		}
+	}
+	pieces := []span{{start: sg.start, symbol: sg.symbol}}
+	for _, h := range hits {
+		if h.indent != shallowest {
+			continue
+		}
+		last := &pieces[len(pieces)-1]
+		at := h.line
+		for at > last.start+1 && attached.MatchString(lines[at-1]) {
+			at--
+		}
+		if at <= last.start {
+			continue
+		}
+		last.end = at
+		name := h.name
+		if sg.symbol != "" {
+			name = sg.symbol + "." + name
+		}
+		pieces = append(pieces, span{start: at, symbol: name})
+	}
+	pieces[len(pieces)-1].end = sg.end
+	if len(pieces) == 1 {
+		return byBlank(sg)
+	}
+	return pack(lines, pieces, maxChars, byBlank)
 }
 
 // cutLong cuts lines[s:e] into spans of at most maxChars, at blank lines

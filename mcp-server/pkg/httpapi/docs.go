@@ -144,6 +144,10 @@ directory, or from the API:
 
     POST %s/api/projects/<PROJECT_ID>/reindex   { "directory": "/abs/path" }
 
+Once indexed, the directory is remembered and re-synced automatically before
+searches whose index is older than ` + "`RAG_AUTO_SYNC_INTERVAL`" + ` (default 60s,
+` + "`off`" + ` to disable): new and edited code is indexed, removed code is deleted.
+
 ## 5. Retrieve
 
 Ask your agent to use ` + "`rag_retrieve_context`" + `, or try the **Playground** in
@@ -158,9 +162,11 @@ func docMCPTools(_, _ string) string {
 		"## `rag_create_project`\nCreate a project collection. Input: `project_id`.\n\n" +
 		"## `rag_index`\nIndex documents you pass directly. Input: `project_id`, `documents` " +
 		"(each `{id?, content, meta?}`). Use for saving facts/decisions.\n\n" +
-		"## `rag_index_project`\nScan a directory and index all code/text files (insertions, edits, " +
-		"deletions handled incrementally; skips node_modules/.git/vendor/dist/build). " +
-		"Input: `project_id`, `directory`. Run this whenever the codebase changes.\n\n" +
+		"## `rag_index_project`\nScan a directory and sync all code/text files (new and edited code " +
+		"indexed, removed code and files deleted, incrementally; honors .gitignore, skips " +
+		"node_modules/.git/vendor/dist/build and secrets). Input: `project_id`, `directory`. Run it " +
+		"once per directory: it is then re-synced automatically before searches " +
+		"(`RAG_AUTO_SYNC_INTERVAL`, default 60s). Run it again to force an immediate sync.\n\n" +
 		"## Read / search\n" +
 		"## `rag_semantic_search`\nSearch a project. Input: `project_id`, `query`, `limit`, and " +
 		"optionally `recall`, `hybrid`, `rerank`, `compress` (hybrid/rerank default on). Returns " +
@@ -177,8 +183,9 @@ func docMCPTools(_, _ string) string {
 		"re-index). Input: `project_id`, `point_ids`.\n\n" +
 		"## `rag_delete_project`\nDelete a project collection and all its data. Input: `project_id`.\n\n" +
 		"## `rag_stats`\nAggregate stats: projects, total chunks, embed model, latency, tokens. No input.\n\n" +
-		"**Typical loop:** `rag_list_projects` to see what exists → `rag_retrieve_context` before " +
-		"coding → do the work → `rag_index` new facts → `rag_index_project` to sync file changes."
+		"**Typical loop:** `rag_index_project` once per project directory → `rag_retrieve_context` " +
+		"before coding (file changes are synced automatically) → do the work → `rag_index` new facts " +
+		"and decisions."
 }
 
 func docAPIReference(base, _ string) string {

@@ -90,8 +90,9 @@ func agentsBlock(projectID string) string {
 
 This project uses the enowx-rag MCP server for per-project RAG memory.
 
+- **First time**: if the project was never indexed, call `+"`rag_index_project`"+` once with the project directory. After that the server re-syncs it automatically before searches (`+"`RAG_AUTO_SYNC_INTERVAL`"+`, default 60s); call it again only to force a sync.
 - **Before coding**: call `+"`rag_retrieve_context`"+` with project ID `+"`%s`"+` and the user's query; use any relevant context.
-- **After coding**: call `+"`rag_index`"+` with new facts/decisions/gotchas, then `+"`rag_index_project`"+` with the project directory to sync file changes. Keep chunks focused; tag with `+"`type:architecture|decision|api|bugfix|howto|snippet`"+`.
+- **After coding**: call `+"`rag_index`"+` with new facts/decisions/gotchas (code changes are synced automatically; the reasons behind them are not). Keep chunks focused; tag with `+"`type:architecture|decision|api|bugfix|howto|snippet`"+`.
 - Each project has its own collection; do not mix project memories.
 %s`, agentsMarkerStart, projectID, projectID, agentsMarkerEnd)
 }

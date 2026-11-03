@@ -23,14 +23,14 @@ Copy the skill into the chosen directory, e.g. (global Factory Droid):
 
 ```bash
 mkdir -p ~/.factory/skills/enowx-rag
-cp /Users/enowdev/Project/enowx-rag/skill/enowx-rag.md ~/.factory/skills/enowx-rag/skill.md
+cp skill/enowx-rag.md ~/.factory/skills/enowx-rag/skill.md
 ```
 
 Or project-local:
 
 ```bash
 mkdir -p .agents/skills/enowx-rag
-cp /Users/enowdev/Project/enowx-rag/skill/enowx-rag.md .agents/skills/enowx-rag/skill.md
+cp skill/enowx-rag.md .agents/skills/enowx-rag/skill.md
 ```
 
 If the tool requires a reload, restart the session or run any skill-refresh command available. After installing, follow the setup wizard in `skill/enowx-rag.md` whenever the user asks for RAG setup.
@@ -40,7 +40,7 @@ If the tool requires a reload, restart the session or run any skill-refresh comm
 The MCP server is written in Go and lives in `mcp-server/`.
 
 ```bash
-cd /Users/enowdev/Project/enowx-rag/mcp-server
+cd mcp-server
 go build ./cmd/mcp-server
 ```
 
@@ -51,7 +51,7 @@ go build ./cmd/mcp-server
 **Option B — Self-hosted TEI:** Start Qdrant + TEI with Docker:
 
 ```bash
-cd /Users/enowdev/Project/enowx-rag/mcp-server
+cd mcp-server
 docker compose up -d qdrant tei-embedding
 ```
 
