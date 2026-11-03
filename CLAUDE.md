@@ -8,15 +8,15 @@ If the user asks to install the skill or MCP server, run:
 
 ```bash
 mkdir -p ~/.factory/skills/enowx-rag
-cp /Users/enowdev/Project/enowx-rag/skill/enowx-rag.md ~/.factory/skills/enowx-rag/skill.md
-cd /Users/enowdev/Project/enowx-rag/mcp-server
+cp skill/enowx-rag.md ~/.factory/skills/enowx-rag/skill.md
+cd mcp-server
 go build ./cmd/mcp-server
 ```
 
 For local backend (TEI fallback):
 
 ```bash
-cd /Users/enowdev/Project/enowx-rag/mcp-server
+cd mcp-server
 docker compose up -d qdrant tei-embedding
 ```
 
@@ -28,7 +28,7 @@ docker compose up -d qdrant tei-embedding
 {
   "mcpServers": {
     "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
@@ -46,7 +46,7 @@ docker compose up -d qdrant tei-embedding
 {
   "mcpServers": {
     "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_EMBEDDER": "tei",

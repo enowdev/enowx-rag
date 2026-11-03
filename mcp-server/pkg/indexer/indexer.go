@@ -53,13 +53,39 @@ var defaultIgnores = map[string]bool{
 	".pytest_cache": true,
 }
 
-// IndexProject scans the directory and indexes all code/text files.
-// It handles insertions (new/changed files), and deletions (files removed since last index).
-// Chunks whose content_hash matches an existing point are skipped (no re-embedding).
+// chunkVersion tags the chunk layout. v4: chunk IDs are derived from the
+// chunk's content ("dir/file#<hash>") instead of its position in the file.
+const chunkVersion = "v4"
+
+// indexBatch bounds how many documents go to the provider per call. The TEI
+// embedding client sub-batches these further to respect its own limit.
+const indexBatch = 100
+
+// IndexProject scans the directory and syncs its code/text files to the
+// project collection, so the stored chunks mirror the files as they are now:
+//
+//   - A chunk's ID is derived from its text ("dir/file#<content hash>"), so a
+//     chunk keeps its ID when code is added or removed around it.
+//   - An unchanged chunk at the same lines is skipped (no re-embedding).
+//   - An unchanged chunk whose line numbers moved gets its header and line
+//     metadata refreshed, without re-embedding when the provider implements
+//     rag.PayloadUpdater (re-indexed otherwise).
+//   - Every previously indexed chunk of this directory that the scan did not
+//     produce again is deleted: chunks of removed files, of code removed from
+//     a file that still exists, and chunks written by older chunk layouts.
+//
+// Points without a source_file (memory notes written with rag_index) are
+// never touched. A root that does not exist is an error, so a typo or a moved
+// repository cannot wipe the index.
 func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string) (*SyncResult, error) {
 	rootDir, err := filepath.Abs(rootDir)
 	if err != nil {
 		return nil, err
+	}
+	if info, err := os.Stat(rootDir); err != nil {
+		return nil, fmt.Errorf("project directory: %w", err)
+	} else if !info.IsDir() {
+		return nil, fmt.Errorf("project directory %s is not a directory", rootDir)
 	}
 
 	// Use the directory base name as a source_dir tag so stale-point
@@ -69,27 +95,31 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 	// directory's file list.
 	sourceDir := filepath.Base(rootDir)
 
-	// Fetch existing points for this source_dir so we can compare content hashes
-	// and skip re-embedding unchanged chunks.
-	existingPoints, err := idx.provider.ListPoints(ctx, projectID, map[string]string{"source_dir": sourceDir})
-	if err != nil {
-		// If we can't list existing points, proceed without skip optimization
-		existingPoints = nil
-	}
-	existingHashes := make(map[string]string) // docID -> content_hash
-	for _, pt := range existingPoints {
-		key := pt.DocID
-		if key == "" {
-			key = pt.ID
-		}
-		if pt.ContentHash != "" {
-			existingHashes[key] = pt.ContentHash
+	// Existing points of this source_dir, keyed by their document ID, to skip
+	// unchanged chunks and find the stale ones. If they can't be listed, every
+	// chunk is indexed and stale cleanup is skipped (reported in StaleError).
+	// Only IDs under "<sourceDir>/" are this directory's: not every provider
+	// applies the source_dir filter (pgvector filters by source_file only), and
+	// another directory's chunks must never be taken for stale ones.
+	existing := make(map[string]rag.PointInfo)
+	existingPoints, listErr := idx.provider.ListPoints(ctx, projectID, map[string]string{"source_dir": sourceDir})
+	if listErr == nil {
+		for _, pt := range existingPoints {
+			key := pt.DocID
+			if key == "" {
+				key = pt.ID
+			}
+			if strings.HasPrefix(key, sourceDir+"/") {
+				existing[key] = pt
+			}
 		}
 	}
 
 	// The files: the caller's, else git's (its ignores honored), else a
 	// walk; never one that holds secrets.
-	var docs []rag.Document
+	var fresh, moved []rag.Document
+	keep := make(map[string]bool)       // doc IDs produced by this scan
+	unreadable := make(map[string]bool) // files that exist but couldn't be read: keep their chunks
 	var currentFiles []string
 	skipped := 0
 	files, err := idx.listFiles(rootDir)
@@ -107,24 +137,31 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 		}
 		currentFiles = append(currentFiles, relPath)
 		content, err := os.ReadFile(path)
-		if err != nil || bytes.IndexByte(content, 0) >= 0 {
-			continue // unreadable, or binary
+		if err != nil {
+			unreadable[relPath] = true // maybe transient: don't drop what we have
+			continue
 		}
+		if bytes.IndexByte(content, 0) >= 0 {
+			continue // binary
+		}
+		seen := make(map[string]int) // content hash -> occurrences in this file
 		for i, ch := range chunkCode(string(content), relPath, idx.chunkSize) {
 			if secretText.MatchString(ch.Text) {
 				continue // a key in the code: never sent to an embedder
 			}
-			docID := fmt.Sprintf("%s/%s#chunk%d", sourceDir, relPath, i)
 			contentHash := computeContentHash(ch.Text)
-			if existingHash, ok := existingHashes[docID]; ok && existingHash == contentHash {
-				skipped++
-				continue
+			seen[contentHash]++
+			docID := fmt.Sprintf("%s/%s#%s", sourceDir, relPath, contentHash)
+			if n := seen[contentHash]; n > 1 {
+				docID = fmt.Sprintf("%s-%d", docID, n) // identical chunks in one file
 			}
+			keep[docID] = true
+
 			head := fmt.Sprintf("File: %s:%d-%d", relPath, ch.Start, ch.End)
 			if ch.Symbol != "" {
 				head += " (" + ch.Symbol + ")"
 			}
-			docs = append(docs, rag.Document{
+			doc := rag.Document{
 				ID:      docID,
 				Content: head + "\n\n" + ch.Text,
 				Meta: map[string]string{
@@ -132,47 +169,94 @@ func (idx *Indexer) IndexProject(ctx context.Context, projectID, rootDir string)
 					"source_dir":    sourceDir,
 					"chunk_index":   fmt.Sprintf("%d", i),
 					"content_hash":  contentHash,
-					"chunk_version": "v3",
+					"chunk_version": chunkVersion,
 					"start_line":    fmt.Sprintf("%d", ch.Start),
 					"end_line":      fmt.Sprintf("%d", ch.End),
 					"symbol":        ch.Symbol,
 				},
-			})
+			}
+			if pt, ok := existing[docID]; ok && pt.ContentHash == contentHash {
+				if sameHeader(pt.Content, head) {
+					skipped++
+					continue
+				}
+				moved = append(moved, doc) // same code, new line numbers
+				continue
+			}
+			fresh = append(fresh, doc)
+		}
+	}
+
+	// Refresh moved chunks without re-embedding when the provider can; any
+	// batch it can't update is re-indexed instead.
+	updated := 0
+	if len(moved) > 0 {
+		if up, ok := idx.provider.(rag.PayloadUpdater); ok {
+			for start := 0; start < len(moved); start += indexBatch {
+				batch := moved[start:min(start+indexBatch, len(moved))]
+				if err := up.UpdatePayload(ctx, projectID, batch); err != nil {
+					fresh = append(fresh, batch...)
+					continue
+				}
+				updated += len(batch)
+			}
+		} else {
+			fresh = append(fresh, moved...)
 		}
 	}
 
 	// Index new/changed documents.
-	if len(docs) > 0 {
-		// Batch index 100 docs per provider call to bound request size. The TEI
-		// embedding client sub-batches these further to respect its own limit.
-		for i := 0; i < len(docs); i += 100 {
-			end := i + 100
-			if end > len(docs) {
-				end = len(docs)
-			}
-			if err := idx.provider.Index(ctx, projectID, docs[i:end]); err != nil {
-				return nil, fmt.Errorf("index batch %d: %w", i/100, err)
-			}
+	for start := 0; start < len(fresh); start += indexBatch {
+		batch := fresh[start:min(start+indexBatch, len(fresh))]
+		if err := idx.provider.Index(ctx, projectID, batch); err != nil {
+			return nil, fmt.Errorf("index batch %d: %w", start/indexBatch, err)
 		}
 	}
 
-	// Find and delete stale points (files that no longer exist in THIS directory).
-	staleIDs, err := idx.findStalePoints(ctx, projectID, sourceDir, currentFiles)
-	if err != nil {
-		return &SyncResult{Indexed: len(docs), Deleted: 0, Skipped: skipped, StaleError: err.Error()}, nil
+	result := &SyncResult{
+		Indexed:      len(fresh),
+		Updated:      updated,
+		FilesScanned: len(currentFiles),
+		Skipped:      skipped,
+	}
+	if listErr != nil {
+		result.StaleError = fmt.Sprintf("list existing points: %v", listErr)
+		return result, nil
+	}
+
+	// Delete every chunk of this directory the scan did not produce again.
+	var staleIDs []string
+	for key, pt := range existing {
+		if pt.SourceFile == "" || unreadable[pt.SourceFile] {
+			continue // a memory note, or a file we couldn't read this time
+		}
+		if !keep[key] {
+			staleIDs = append(staleIDs, pt.ID)
+		}
 	}
 	if len(staleIDs) > 0 {
 		if err := idx.provider.DeletePoints(ctx, projectID, staleIDs); err != nil {
-			return &SyncResult{Indexed: len(docs), Deleted: 0, Skipped: skipped, StaleError: err.Error()}, nil
+			result.StaleError = err.Error()
+			return result, nil
 		}
 	}
+	result.Deleted = len(staleIDs)
+	return result, nil
+}
 
-	return &SyncResult{
-		Indexed:      len(docs),
-		Deleted:      len(staleIDs),
-		FilesScanned: len(currentFiles),
-		Skipped:      skipped,
-	}, nil
+// sameHeader reports whether a stored chunk's content (possibly a truncated
+// preview) starts with the given header line. Providers that return no
+// content preview can't be checked; the chunk is then treated as unchanged,
+// since its ID and content hash already match.
+func sameHeader(stored, head string) bool {
+	if stored == "" {
+		return true
+	}
+	line := head + "\n"
+	if len(stored) < len(line) {
+		return strings.HasPrefix(line, stored) // preview cut inside the header
+	}
+	return strings.HasPrefix(stored, line)
 }
 
 // listFiles are the files of rootDir to look at, relative with slashes.
@@ -204,36 +288,12 @@ func (idx *Indexer) listFiles(rootDir string) ([]string, error) {
 
 // SyncResult holds stats from a project sync.
 type SyncResult struct {
-	Indexed      int    `json:"indexed"`
-	Deleted      int    `json:"deleted"`
+	Indexed      int    `json:"indexed"`           // chunks embedded and stored
+	Updated      int    `json:"updated,omitempty"` // moved chunks refreshed without re-embedding
+	Deleted      int    `json:"deleted"`           // stale chunks removed
 	FilesScanned int    `json:"files_scanned"`
-	Skipped      int    `json:"skipped"`
+	Skipped      int    `json:"skipped"` // unchanged chunks
 	StaleError   string `json:"stale_error,omitempty"`
-}
-
-func (idx *Indexer) findStalePoints(ctx context.Context, projectID, sourceDir string, currentFiles []string) ([]string, error) {
-	currentSet := make(map[string]bool, len(currentFiles))
-	for _, f := range currentFiles {
-		currentSet[f] = true
-	}
-
-	// List only points belonging to this source_dir so that indexing a
-	// different directory into the same project doesn't wipe the first.
-	points, err := idx.provider.ListPoints(ctx, projectID, map[string]string{"source_dir": sourceDir})
-	if err != nil {
-		return nil, err
-	}
-
-	var stale []string
-	for _, pt := range points {
-		if pt.SourceFile == "" {
-			continue
-		}
-		if !currentSet[pt.SourceFile] {
-			stale = append(stale, pt.ID)
-		}
-	}
-	return stale, nil
 }
 
 // chunkText splits text into chunks of approximately maxChars.

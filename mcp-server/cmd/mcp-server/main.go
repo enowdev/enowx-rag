@@ -67,6 +67,9 @@ type RuntimeConfig struct {
 	OpenAIDim     int
 	RerankerModel string
 	VectorDim     int
+	// AutoSyncInterval is the raw auto-sync setting (config file
+	// auto_sync_interval, or RAG_AUTO_SYNC_INTERVAL); see core.ParseAutoSyncInterval.
+	AutoSyncInterval string
 }
 
 // resolveConfig builds a RuntimeConfig from the three-tier priority:
@@ -95,6 +98,8 @@ func resolveConfig() (*RuntimeConfig, error) {
 		OpenAIDim:     cfg.OpenAI.Dim,
 		RerankerModel: cfg.RerankerModel,
 		VectorDim:     cfg.Voyage.Dim,
+
+		AutoSyncInterval: cfg.AutoSyncInterval,
 	}
 
 	// Fall back to tei if voyage key is missing and embedder wasn't set
@@ -254,6 +259,21 @@ func main() {
 	svc.SetEmbedModel(cfg.VoyageModel)
 	svc.SetBackend(cfg.VectorStore)
 
+	// Auto-sync: directories indexed with rag_index_project are re-synced
+	// (incrementally) before a search once their index is older than the
+	// auto-sync interval (config auto_sync_interval or RAG_AUTO_SYNC_INTERVAL;
+	// default 60s; "off" disables), so agents don't have to re-run
+	// rag_index_project after every change.
+	if every, err := core.ParseAutoSyncInterval(cfg.AutoSyncInterval); err != nil {
+		fmt.Fprintf(os.Stderr, "auto-sync: disabled: %v\n", err)
+	} else if every > 0 {
+		if reg, err := core.NewDirRegistry(config.ProjectDirsPath()); err != nil {
+			fmt.Fprintf(os.Stderr, "auto-sync: disabled: %v\n", err)
+		} else {
+			svc.EnableAutoSync(reg, every)
+		}
+	}
+
 	// Durable metrics: a local SQLite file (pure-Go, no cgo) that works with any
 	// vector-store backend. If it can't be opened, fall back to in-memory
 	// metrics rather than failing startup.
@@ -391,7 +411,7 @@ func registerMCPTools(server *mcp.Server, svc *core.Service) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "rag_index_project",
-		Description: "Scan a project directory and auto-index all code/text files into RAG. Handles insertions (new/changed files) and deletions (removed files). Skips node_modules, .git, vendor, dist, build. Run this when the codebase changes.",
+		Description: "Scan a project directory and index all code/text files into RAG, syncing it: new and changed code is indexed, code removed from files and removed files are deleted. Honors .gitignore; skips node_modules, .git, vendor, dist, build and secret files. Run it once per project directory: the directory is remembered and re-synced automatically before searches (RAG_AUTO_SYNC_INTERVAL, default 60s). Run it again to force an immediate sync.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in ScanProjectInput) (*mcp.CallToolResult, any, error) {
 		// Use a long-lived context so large projects don't time out under the
 		// MCP framework's short request deadline. 30 minutes is enough for
@@ -406,6 +426,7 @@ func registerMCPTools(server *mcp.Server, svc *core.Service) {
 			"status":         "synced",
 			"project_id":     in.ProjectID,
 			"chunks_indexed": result.Indexed,
+			"chunks_updated": result.Updated,
 			"points_deleted": result.Deleted,
 			"files_scanned":  result.FilesScanned,
 			"stale_error":    result.StaleError,

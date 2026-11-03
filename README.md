@@ -334,7 +334,7 @@ Copy the skill file into the Droid skill directory:
 
 ```bash
 mkdir -p ~/.factory/skills/enowx-rag
-cp /Users/enowdev/Project/enowx-rag/skill/enowx-rag.md ~/.factory/skills/enowx-rag/skill.md
+cp skill/enowx-rag.md ~/.factory/skills/enowx-rag/skill.md
 ```
 
 If the skill must be reloaded, restart the Droid session or refresh skills.
@@ -344,11 +344,11 @@ If the skill must be reloaded, restart the Droid session or refresh skills.
 ## 2. Build the MCP server
 
 ```bash
-cd /Users/enowdev/Project/enowx-rag/mcp-server
+cd mcp-server
 go build ./cmd/mcp-server
 ```
 
-This produces the binary `/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server`.
+This produces the binary `mcp-server/mcp-server` inside your clone; use its absolute path as the MCP `command` below.
 
 ---
 
@@ -357,7 +357,7 @@ This produces the binary `/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
 If the user does not already have a Qdrant + TEI backend, start the local one:
 
 ```bash
-cd /Users/enowdev/Project/enowx-rag/mcp-server
+cd mcp-server
 docker compose up -d qdrant tei-embedding
 ```
 
@@ -682,7 +682,7 @@ This project uses the `enowx-rag` MCP server for per-project memory.
 
 1. Summarize what you changed.
 2. Call `rag_index` with useful new facts, design decisions, gotchas, or patterns under project ID `PROJECT_ID`.
-3. Call `rag_index_project` with the project directory to sync all file changes into RAG. Always do this — it handles new files, edits, and deletions automatically.
+3. No need to re-index files after each change: once indexed with `rag_index_project`, the directory is re-synced automatically before searches (`RAG_AUTO_SYNC_INTERVAL`, default 60s). Call `rag_index_project` again only to force an immediate sync.
 
 Keep chunks concise (one idea per chunk). Use metadata tags like `type:architecture`, `type:decision`, `type:api`, `type:bugfix`, `type:howto`, or `type:snippet`.
 ```
@@ -868,6 +868,7 @@ All configuration is via environment variables (or config file at `~/.enowx-rag/
 | `RAG_VECTOR_DIM` | `1024` | Embedding vector dimension (matches voyage-4 default). Override only if using a different model with a different dimension |
 | `RAG_RERANKER_MODEL` | *(empty)* | Reranker model name (e.g., `rerank-2.5`). When set and `RAG_VOYAGE_API_KEY` is available, reranking is enabled for search |
 | `RAG_ADMIN_TOKEN` | *(empty)* | Optional admin token. When set, all `/api/*` endpoints require `Authorization: Bearer <token>` header. When unset, no auth is required |
+| `RAG_AUTO_SYNC_INTERVAL` | `60s` | Directories indexed with `rag_index_project` are re-synced (incrementally) before a search once their index is older than this. A duration (`90s`, `5m`), a number of seconds, or `off` to disable; a tiny value like `1s` syncs before practically every search. Also settable as `auto_sync_interval` in `~/.enowx-rag/config.yaml` (the env var wins). The directories are recorded in `~/.enowx-rag/project_dirs.json` |
 | `RAG_CORS_ORIGIN` | *(empty)* | Optional CORS origin for the SSE event stream (`/api/events`). When set (e.g. `*` or `https://app.example.com`), it becomes the `Access-Control-Allow-Origin` header. When unset, no CORS header is sent and the stream stays same-origin only |
 
 ## Tools
@@ -875,7 +876,7 @@ All configuration is via environment variables (or config file at `~/.enowx-rag/
 - `rag_create_project` — create a project collection
 - `rag_delete_project` — delete a project collection
 - `rag_index` — index individual documents into a project
-- `rag_index_project` — scan a directory and auto-index all code/text files. Handles insertions and deletions (removed files are purged from RAG). Skips node_modules, .git, vendor, dist, build.
+- `rag_index_project` — scan a directory and sync all code/text files: new and edited code is indexed, code removed from a file and removed files are purged. Honors `.gitignore`; skips node_modules, .git, vendor, dist, build and secrets. Run it once per directory: the directory is remembered and re-synced automatically before searches (see `RAG_AUTO_SYNC_INTERVAL`).
 - `rag_semantic_search` — semantic search across project memory
 - `rag_retrieve_context` — compact context string for LLM consumption
 

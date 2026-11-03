@@ -150,7 +150,7 @@ func TestIndexerAddsContentHash(t *testing.T) {
 	}
 }
 
-// TestIndexerAddsChunkVersion verifies that IndexProject adds chunk_version="v2"
+// TestIndexerAddsChunkVersion verifies that IndexProject adds chunk_version="v4"
 // to each document's metadata.
 func TestIndexerAddsChunkVersion(t *testing.T) {
 	dir := t.TempDir()
@@ -173,8 +173,8 @@ func TestIndexerAddsChunkVersion(t *testing.T) {
 			t.Errorf("doc %d: chunk_version not in metadata", i)
 			continue
 		}
-		if version != "v3" {
-			t.Errorf("doc %d: chunk_version = %q, want %q", i, version, "v3")
+		if version != "v4" {
+			t.Errorf("doc %d: chunk_version = %q, want %q", i, version, "v4")
 		}
 	}
 }

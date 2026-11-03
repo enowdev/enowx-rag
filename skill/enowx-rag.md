@@ -6,7 +6,7 @@ Use this skill when the user wants to set up, configure, or deploy the enowx-rag
 
 - User says "setup RAG memory", "install enowx-rag", "buat project RAG", "buat MCP RAG", "connect RAG", "rag per project", or similar.
 - User asks about configuring a Model Context Protocol (MCP) server for project memory.
-- User wants to deploy the RAG backend locally or connect to an existing Coolify RAG stack.
+- User wants to deploy the RAG backend locally, on a server, or connect to an existing Qdrant / TEI backend.
 
 ## Goal
 
@@ -15,7 +15,7 @@ Walk the user through installing the `enowx-rag` MCP server and optionally deplo
 ## Constraints
 
 - Do not expose secrets or API keys in plain text in the final output; store them in `.env` files.
-- If deploying to Coolify, prefer managed Docker services or the existing `robloxkit-rag` stack if healthy.
+- If deploying to a hosting platform (e.g. Coolify), prefer its managed Docker services, and reuse a Qdrant / TEI service the user already runs if it is healthy.
 - Do not modify the user's existing code repositories unless explicitly asked.
 - Use the exact config format documented by each tool. Do not guess formats.
 
@@ -40,15 +40,15 @@ Walk the user through installing the `enowx-rag` MCP server and optionally deplo
    - Create `.env` from the chosen configuration.
    - Provide the MCP client config snippet for all supported tools using the correct format per tool.
 
-4. **Optional Coolify deployment**
-   - If the user wants to deploy to Coolify, use the `coolify` MCP tools to create/update the service/app.
-   - Use the existing `robloxkit-rag` service (Qdrant + TEI) if it is healthy and matches the requirements.
+4. **Optional server deployment**
+   - If the user wants the backend on a server (e.g. Coolify), use that platform's tools if available (such as a `coolify` MCP server) to create/update the services.
+   - Reuse an existing Qdrant + TEI service the user already runs if it is healthy and matches the requirements.
 
 ## Required user info
 
 Ask these questions one at a time or in a compact batch:
 
-1. `project_path` - Where should the `enowx-rag` repository be created/cloned? (default: `/Users/enowdev/Project/enowx-rag`)
+1. `project_path` - Where should the `enowx-rag` repository be created/cloned? (suggest `~/enowx-rag`; skip if the user installed the prebuilt binary)
 2. `embedder` - Which embedding option?
    - **`voyage`** (default, recommended): hosted API, free at voyageai.com. Ask for `voyage_api_key`.
    - **`tei`**: self-hosted. Ask for Qdrant URL + TEI URL, or offer Docker setup.
@@ -140,6 +140,8 @@ volumes:
 
 Each tool has a different config format and file location. Use these exact formats.
 
+In every block below, replace `/path/to/enowx-rag/mcp-server/mcp-server` with the absolute path of the binary you built. If the user installed the prebuilt binary (install script, Homebrew, npm or `go install`), use `enowx-rag` (on the `PATH`) as the command instead.
+
 Each config block below shows the Voyage AI setup (recommended). Replace with `RAG_EMBEDDER=tei` + `RAG_TEI_URL` if using self-hosted TEI instead.
 
 ### Claude Code (Anthropic CLI)
@@ -152,7 +154,7 @@ claude mcp add --transport stdio enowx-rag \
   --env RAG_VECTOR_STORE=qdrant \
   --env RAG_QDRANT_URL=http://localhost:6333 \
   --env RAG_VOYAGE_API_KEY=your-voyage-api-key \
-  -- /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
+  -- /path/to/enowx-rag/mcp-server/mcp-server
 ```
 
 **JSON format (`.mcp.json` or `~/.claude.json`):**
@@ -160,7 +162,7 @@ claude mcp add --transport stdio enowx-rag \
 {
   "mcpServers": {
     "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
@@ -182,7 +184,7 @@ Source: https://code.claude.com/docs/en/mcp
 {
   "mcpServers": {
     "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
@@ -205,7 +207,7 @@ Source: https://code.claude.com/docs/en/mcp-quickstart
 {
   "mcpServers": {
     "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
@@ -231,7 +233,7 @@ Source: https://docs.cline.bot/mcp/configuring-mcp-servers
   "mcpServers": {
     "enowx-rag": {
       "type": "stdio",
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
@@ -259,7 +261,7 @@ OpenCode uses a different schema: `mcp` key (not `mcpServers`), `command` as arr
   "mcp": {
     "enowx-rag": {
       "type": "local",
-      "command": ["/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server"],
+      "command": ["/path/to/enowx-rag/mcp-server/mcp-server"],
       "enabled": true,
       "environment": {
         "RAG_VECTOR_STORE": "qdrant",
@@ -284,13 +286,13 @@ codex mcp add enowx-rag \
   --env RAG_VECTOR_STORE=qdrant \
   --env RAG_QDRANT_URL=http://localhost:6333 \
   --env RAG_VOYAGE_API_KEY=your-voyage-api-key \
-  -- /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
+  -- /path/to/enowx-rag/mcp-server/mcp-server
 ```
 
 **TOML format (`config.toml`):**
 ```toml
 [mcp_servers.enowx-rag]
-command = "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server"
+command = "/path/to/enowx-rag/mcp-server/mcp-server"
 
 [mcp_servers.enowx-rag.env]
 RAG_VECTOR_STORE = "qdrant"
@@ -305,7 +307,7 @@ Source: https://developers.openai.com/codex/mcp
 
 **CLI command:**
 ```bash
-droid mcp add enowx-rag /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
+droid mcp add enowx-rag /path/to/enowx-rag/mcp-server/mcp-server
 ```
 
 Source: Factory Droid CLI documentation
@@ -319,7 +321,7 @@ Source: Factory Droid CLI documentation
 {
   "mcpServers": {
     "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
@@ -343,7 +345,7 @@ Source: https://docs.roocode.com/features/mcp/using-mcp-in-roo
 {
   "context_servers": {
     "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "args": [],
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
@@ -368,7 +370,7 @@ Source: https://zed.dev/docs/ai/mcp
 {
   "mcpServers": {
     "enowx-rag": {
-      "command": "/Users/enowdev/Project/enowx-rag/mcp-server/mcp-server",
+      "command": "/path/to/enowx-rag/mcp-server/mcp-server",
       "env": {
         "RAG_VECTOR_STORE": "qdrant",
         "RAG_QDRANT_URL": "http://localhost:6333",
@@ -393,7 +395,7 @@ Continue uses a `mcpServers` list (array of objects, not a map). Each entry has 
 ```yaml
 mcpServers:
   - name: enowx-rag
-    command: /Users/enowdev/Project/enowx-rag/mcp-server/mcp-server
+    command: /path/to/enowx-rag/mcp-server/mcp-server
     env:
       RAG_VECTOR_STORE: qdrant
       RAG_QDRANT_URL: http://localhost:6333
@@ -459,15 +461,16 @@ This project uses `enowx-rag` MCP server for per-project memory (RAG).
 
 ## Before you start coding
 
-1. Call `rag_retrieve_context` with the user's task/query and the project ID `PROJECT_ID`.
-2. Read the returned context. If it is empty or irrelevant, continue as normal.
-3. If the context changes how you would approach the task, explain the relevant insights briefly.
+1. If the project has never been indexed (`rag_project_exists` returns false), call `rag_index_project` once with the project directory.
+2. Call `rag_retrieve_context` with the user's task/query and the project ID `PROJECT_ID`.
+3. Read the returned context. If it is empty or irrelevant, continue as normal.
+4. If the context changes how you would approach the task, explain the relevant insights briefly.
 
 ## After you finish coding
 
 1. Summarize what you changed and why.
-2. Call `rag_index` with useful new facts, design decisions, gotchas, or patterns under project ID `PROJECT_ID`.
-3. Call `rag_index_project` with the project directory to sync all file changes into RAG. Always do this — it handles new files, edits, and deletions automatically.
+2. Call `rag_index` with useful new facts, design decisions, gotchas, or patterns under project ID `PROJECT_ID` — code is synced automatically, but the reasons behind it are only saved if you save them.
+3. You don't need to re-index files after each change: once a directory has been indexed with `rag_index_project`, the server re-syncs it automatically before searches (when the index is older than `RAG_AUTO_SYNC_INTERVAL`, default 60s). Call `rag_index_project` again only to force an immediate sync, or when auto-sync is turned off.
 4. Keep chunks focused and concise (one idea per chunk). Include metadata tags when helpful.
 
 ## Project ID
@@ -509,15 +512,16 @@ You are working with a project that has an `enowx-rag` MCP server installed.
 
 ### Before making significant changes
 
-1. Call `rag_retrieve_context` with the project ID `PROJECT_ID` and the user's query.
-2. Read the returned context. If it is empty or irrelevant, continue as normal.
-3. If the context changes how you would approach the task, explain the relevant insights briefly.
+1. If the project has never been indexed (`rag_project_exists` returns false), call `rag_index_project` once with the project directory.
+2. Call `rag_retrieve_context` with the project ID `PROJECT_ID` and the user's query.
+3. Read the returned context. If it is empty or irrelevant, continue as normal.
+4. If the context changes how you would approach the task, explain the relevant insights briefly.
 
 ### After completing work
 
 1. Summarize what you changed and why.
-2. Call `rag_index` with useful new facts, design decisions, gotchas, or patterns under project ID `PROJECT_ID`.
-3. Call `rag_index_project` with the project directory to sync all file changes into RAG. Always do this — it handles new files, edits, and deletions automatically.
+2. Call `rag_index` with useful new facts, design decisions, gotchas, or patterns under project ID `PROJECT_ID` — code is synced automatically, but the reasons behind it are only saved if you save them.
+3. You don't need to re-index files after each change: once a directory has been indexed with `rag_index_project`, the server re-syncs it automatically before searches (when the index is older than `RAG_AUTO_SYNC_INTERVAL`, default 60s). Call `rag_index_project` again only to force an immediate sync, or when auto-sync is turned off.
 4. Keep chunks focused and concise (one idea per chunk). Include metadata tags when helpful.
 
 ## Project ID
@@ -600,7 +604,7 @@ Created:
 - `/path/to/project/CLAUDE.md`
 
 ### Next steps
-1. Build MCP server: `cd /Users/enowdev/Project/enowx-rag/mcp-server && go build ./cmd/mcp-server`
+1. Build MCP server: `cd /path/to/enowx-rag/mcp-server && go build ./cmd/mcp-server`
 2. Restart your coding tool or reload MCP server list.
 3. Test by asking the agent to retrieve project context.
 ```
@@ -617,7 +621,7 @@ curl -f http://localhost:6333/healthz
 curl -f http://localhost:8081/health
 
 # Build MCP server
-cd /Users/enowdev/Project/enowx-rag/mcp-server && go build ./cmd/mcp-server
+cd /path/to/enowx-rag/mcp-server && go build ./cmd/mcp-server
 ```
 
 ## Notes

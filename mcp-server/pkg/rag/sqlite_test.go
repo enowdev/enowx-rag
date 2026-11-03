@@ -79,3 +79,43 @@ func TestSQLiteProvider(t *testing.T) {
 		t.Fatalf("deleted still found: %+v", got)
 	}
 }
+
+// UpdatePayload rewrites a point's content and metadata in place: its vector
+// is kept (no embedding), the metadata merged, the full-text index refreshed.
+func TestSQLiteUpdatePayload(t *testing.T) {
+	ctx := context.Background()
+	p, err := NewSQLiteProvider(filepath.Join(t.TempDir(), "rag.db"), wordsEmbedder{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	doc := Document{ID: "a", Content: "File: x.go:1-3\n\nfunc ParseConfig reads the yaml config file",
+		Meta: map[string]string{"source_file": "x.go", "start_line": "1"}}
+	if err := p.Index(ctx, "proj", []Document{doc}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := p.SemanticSearch(ctx, "proj", "read the config file", 1)
+
+	moved := Document{ID: "a", Content: "File: x.go:11-13\n\nfunc ParseConfig reads the yaml config file",
+		Meta: map[string]string{"start_line": "11"}}
+	if err := p.UpdatePayload(ctx, "proj", []Document{moved}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.SemanticSearch(ctx, "proj", "read the config file", 1)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("search: %+v %v", got, err)
+	}
+	if got[0].Content != moved.Content || got[0].Meta["start_line"] != "11" || got[0].Meta["source_file"] != "x.go" || got[0].Meta["embed_model"] == "" {
+		t.Fatalf("payload not updated/merged: %+v", got[0])
+	}
+	if got[0].Score != before[0].Score {
+		t.Fatalf("vector changed: score %v -> %v", before[0].Score, got[0].Score)
+	}
+	hy, err := p.SemanticSearchHybrid(ctx, "proj", "x.go:11-13", 1)
+	if err != nil || len(hy) == 0 || hy[0].ID != "a" {
+		t.Fatalf("fts not refreshed: %+v %v", hy, err)
+	}
+	if err := p.UpdatePayload(ctx, "proj", []Document{{ID: "missing", Content: "x"}}); err == nil {
+		t.Fatal("want an error for a missing point")
+	}
+}

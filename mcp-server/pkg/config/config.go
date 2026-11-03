@@ -49,6 +49,10 @@ type Config struct {
 	ChromaURL     string `yaml:"chroma_url"`
 	TEIURL        string `yaml:"tei_url"`
 	RerankerModel string `yaml:"reranker_model"`
+	// AutoSyncInterval is how stale an indexed directory may get before a
+	// search re-syncs it: a duration ("60s", "5m"), seconds ("30"), or "off".
+	// Empty means the built-in default (60s). Env: RAG_AUTO_SYNC_INTERVAL.
+	AutoSyncInterval string `yaml:"auto_sync_interval,omitempty"`
 	// AdminToken, when set, gates /api and /mcp with a bearer token. The env var
 	// RAG_ADMIN_TOKEN takes precedence over this file value (see EffectiveAdminToken).
 	AdminToken string `yaml:"admin_token,omitempty"`
@@ -110,6 +114,13 @@ func MetricsDBPath() string {
 		return filepath.Join(".enowx-rag", "metrics.db")
 	}
 	return filepath.Join(home, ".enowx-rag", "metrics.db")
+}
+
+// ProjectDirsPath is where the directories indexed into each project are
+// recorded for auto-sync (~/.enowx-rag/project_dirs.json), next to the
+// metrics database.
+func ProjectDirsPath() string {
+	return filepath.Join(filepath.Dir(MetricsDBPath()), "project_dirs.json")
 }
 
 // Load reads the config file from Path() and returns a populated *Config.
@@ -231,6 +242,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("RAG_RERANKER_MODEL"); v != "" {
 		cfg.RerankerModel = v
+	}
+	if v := os.Getenv("RAG_AUTO_SYNC_INTERVAL"); v != "" {
+		cfg.AutoSyncInterval = v
 	}
 	if v := os.Getenv("RAG_VECTOR_DIM"); v != "" {
 		if d, err := strconv.Atoi(v); err == nil && d > 0 {

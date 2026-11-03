@@ -6,6 +6,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -108,6 +109,7 @@ type Service struct {
 	metrics      *Metrics
 	metricsStore MetricsStore // optional durable metrics; nil = in-memory only
 	backend      string       // vector store name (e.g. "qdrant"), set by main.go
+	syncer       *autoSync    // optional: keeps indexed directories in sync (EnableAutoSync)
 }
 
 // MetricsStore is an optional durable sink for query metrics, injected into
@@ -264,6 +266,10 @@ func (s *Service) retrieveCandidates(ctx context.Context, projectID, query strin
 //
 // Defaults: K=5, Recall=40.
 func (s *Service) Search(ctx context.Context, projectID, query string, opts SearchOpts) ([]rag.Result, error) {
+	// Bring the project's indexed directories up to date first, when enabled
+	// and due, so results reflect the files as they are now.
+	s.autoSyncProject(ctx, projectID)
+
 	k := opts.K
 	if k <= 0 {
 		k = DefaultK
@@ -418,6 +424,18 @@ func (s *Service) IndexProject(ctx context.Context, projectID, dir string) (*ind
 		Data:      map[string]any{"project_id": projectID, "directory": dir},
 	})
 
+	// Chunk IDs are prefixed with the directory's base name, so two
+	// directories of one project with the same name (/x/app, /y/app) would
+	// replace each other's chunks. Refuse the second one.
+	if err := s.checkDirNameClash(projectID, dir); err != nil {
+		s.events.Publish(Event{
+			Type:      "index_failed",
+			Timestamp: time.Now(),
+			Data:      map[string]any{"project_id": projectID, "error": err.Error()},
+		})
+		return nil, err
+	}
+
 	// Ensure the collection exists before indexing. The MCP flow calls
 	// CreateProject first, but the HTTP reindex endpoint indexes a project
 	// directly, so a first-time index would otherwise fail with a missing
@@ -446,12 +464,15 @@ func (s *Service) IndexProject(ctx context.Context, projectID, dir string) (*ind
 		return nil, err
 	}
 
+	s.recordIndexed(projectID, dir)
+
 	s.events.Publish(Event{
 		Type:      "index_completed",
 		Timestamp: time.Now(),
 		Data: map[string]any{
 			"project_id":    projectID,
 			"indexed":       result.Indexed,
+			"updated":       result.Updated,
 			"deleted":       result.Deleted,
 			"files_scanned": result.FilesScanned,
 			"skipped":       result.Skipped,
@@ -538,6 +559,11 @@ func (s *Service) CreateProject(ctx context.Context, projectID string) error {
 func (s *Service) DeleteProject(ctx context.Context, projectID string) error {
 	if err := s.provider.DeleteCollection(ctx, projectID); err != nil {
 		return err
+	}
+	if s.syncer != nil {
+		if err := s.syncer.registry.Remove(projectID); err != nil {
+			fmt.Fprintf(os.Stderr, "auto-sync: could not forget %s: %v\n", projectID, err)
+		}
 	}
 	s.events.Publish(Event{
 		Type:      "project_deleted",
