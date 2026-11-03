@@ -67,6 +67,9 @@ type RuntimeConfig struct {
 	OpenAIDim     int
 	RerankerModel string
 	VectorDim     int
+	// AutoSyncInterval is the raw auto-sync setting (config file
+	// auto_sync_interval, or RAG_AUTO_SYNC_INTERVAL); see core.ParseAutoSyncInterval.
+	AutoSyncInterval string
 }
 
 // resolveConfig builds a RuntimeConfig from the three-tier priority:
@@ -95,6 +98,8 @@ func resolveConfig() (*RuntimeConfig, error) {
 		OpenAIDim:     cfg.OpenAI.Dim,
 		RerankerModel: cfg.RerankerModel,
 		VectorDim:     cfg.Voyage.Dim,
+
+		AutoSyncInterval: cfg.AutoSyncInterval,
 	}
 
 	// Fall back to tei if voyage key is missing and embedder wasn't set
@@ -255,10 +260,11 @@ func main() {
 	svc.SetBackend(cfg.VectorStore)
 
 	// Auto-sync: directories indexed with rag_index_project are re-synced
-	// (incrementally) before a search once their index is older than
-	// RAG_AUTO_SYNC_INTERVAL (default 60s; "off" disables), so agents don't
-	// have to re-run rag_index_project after every change.
-	if every, err := core.ParseAutoSyncInterval(os.Getenv("RAG_AUTO_SYNC_INTERVAL")); err != nil {
+	// (incrementally) before a search once their index is older than the
+	// auto-sync interval (config auto_sync_interval or RAG_AUTO_SYNC_INTERVAL;
+	// default 60s; "off" disables), so agents don't have to re-run
+	// rag_index_project after every change.
+	if every, err := core.ParseAutoSyncInterval(cfg.AutoSyncInterval); err != nil {
 		fmt.Fprintf(os.Stderr, "auto-sync: disabled: %v\n", err)
 	} else if every > 0 {
 		if reg, err := core.NewDirRegistry(config.ProjectDirsPath()); err != nil {

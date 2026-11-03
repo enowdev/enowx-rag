@@ -35,7 +35,7 @@ func helperClearEnv(t *testing.T) func() {
 		"RAG_PGVECTOR_DSN",
 		"RAG_TEI_URL",
 		"RAG_VOYAGE_API_KEY", "RAG_VOYAGE_MODEL", "RAG_VECTOR_DIM",
-		"RAG_RERANKER_MODEL",
+		"RAG_RERANKER_MODEL", "RAG_AUTO_SYNC_INTERVAL",
 	}
 	saved := make(map[string]string)
 	for _, k := range keys {
@@ -548,5 +548,36 @@ func TestSave_OverwritesExisting(t *testing.T) {
 	}
 	if loaded.Voyage.APIKey != "second-key" {
 		t.Errorf("Voyage.APIKey = %q, want %q", loaded.Voyage.APIKey, "second-key")
+	}
+}
+
+// auto_sync_interval comes from the file, the env var wins, and it
+// survives a Save/Load round trip (the dashboard rewrites the file).
+func TestAutoSyncInterval_FileEnvAndRoundTrip(t *testing.T) {
+	cleanup := helperClearEnv(t)
+	defer cleanup()
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".enowx-rag"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(Path(), []byte("vector_store: sqlite\nauto_sync_interval: 5s\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Resolve()
+	if err != nil || cfg.AutoSyncInterval != "5s" {
+		t.Fatalf("from file: %q, %v", cfg.AutoSyncInterval, err)
+	}
+	if err := Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := Load(); err != nil || again.AutoSyncInterval != "5s" {
+		t.Fatalf("after round trip: %+v, %v", again, err)
+	}
+
+	t.Setenv("RAG_AUTO_SYNC_INTERVAL", "off")
+	if cfg, err := Resolve(); err != nil || cfg.AutoSyncInterval != "off" {
+		t.Fatalf("env override: %q, %v", cfg.AutoSyncInterval, err)
 	}
 }

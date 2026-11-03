@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Auto-sync before search**: a directory indexed once with
   `rag_index_project` is recorded (`~/.enowx-rag/project_dirs.json`) and
   re-synced incrementally before a search when its index is older than
-  `RAG_AUTO_SYNC_INTERVAL` (default `60s`, `off` disables). Agents no longer
+  `RAG_AUTO_SYNC_INTERVAL` or `auto_sync_interval` in config.yaml (default
+  `60s`, `off` disables). Agents no longer
   need to call `rag_index_project` after every task; the agent templates say
   so. A recorded directory that no longer exists is skipped, not synced, and
   a project deleted elsewhere is not recreated. The registry file is shared

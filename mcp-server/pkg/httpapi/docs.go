@@ -145,8 +145,9 @@ directory, or from the API:
     POST %s/api/projects/<PROJECT_ID>/reindex   { "directory": "/abs/path" }
 
 Once indexed, the directory is remembered and re-synced automatically before
-searches whose index is older than ` + "`RAG_AUTO_SYNC_INTERVAL`" + ` (default 60s,
-` + "`off`" + ` to disable): new and edited code is indexed, removed code is deleted.
+searches whose index is older than ` + "`auto_sync_interval`" + ` in config.yaml or
+` + "`RAG_AUTO_SYNC_INTERVAL`" + ` (default 60s, ` + "`off`" + ` to disable): new and edited
+code is indexed, removed code is deleted.
 
 ## 5. Retrieve
 

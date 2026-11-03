@@ -259,7 +259,8 @@ func (s *Service) autoSyncProject(ctx context.Context, project string) {
 	}
 }
 
-// ParseAutoSyncInterval reads RAG_AUTO_SYNC_INTERVAL: a duration ("90s",
+// ParseAutoSyncInterval reads the auto-sync interval (config file
+// auto_sync_interval, or env RAG_AUTO_SYNC_INTERVAL): a duration ("90s",
 // "5m"), a whole number of seconds, or "0" / "off" / "false" to disable.
 // Empty means DefaultAutoSyncInterval; anything else is an error.
 func ParseAutoSyncInterval(v string) (time.Duration, error) {
@@ -272,16 +273,16 @@ func ParseAutoSyncInterval(v string) (time.Duration, error) {
 	}
 	if n, err := strconv.Atoi(v); err == nil {
 		if n < 0 {
-			return 0, fmt.Errorf("RAG_AUTO_SYNC_INTERVAL %q: negative", v)
+			return 0, fmt.Errorf("auto-sync interval %q: negative", v)
 		}
 		return time.Duration(n) * time.Second, nil
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil {
-		return 0, fmt.Errorf("RAG_AUTO_SYNC_INTERVAL %q: want a duration like 60s, seconds, or off", v)
+		return 0, fmt.Errorf("auto-sync interval %q: want a duration like 60s, seconds, or off", v)
 	}
 	if d < 0 {
-		return 0, fmt.Errorf("RAG_AUTO_SYNC_INTERVAL %q: negative", v)
+		return 0, fmt.Errorf("auto-sync interval %q: negative", v)
 	}
 	return d, nil
 }
